@@ -1,0 +1,199 @@
+.performance-dashboard {
+  margin-bottom: 2.5rem;
+}
+
+/* System Status Hero */
+.system-status-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 2rem !important;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.05) 0%, rgba(var(--accent-rgb), 0.05) 100%) !important;
+  border: 1px solid rgba(var(--primary-rgb), 0.1) !important;
+}
+
+.status-main {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.status-icon-glow {
+  width: 56px;
+  height: 56px;
+  background: rgba(var(--accent-rgb), 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.2);
+}
+
+.icon-pulse {
+  color: var(--accent);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.status-content h3 {
+  font-size: 0.75rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.status-message {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.status-action {
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.quick-stats {
+  display: flex;
+  gap: 2rem;
+}
+
+.q-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.q-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.q-value {
+  font-size: 1.25rem;
+  font-weight: 900;
+  color: var(--text);
+}
+
+/* Signals Grid */
+.signals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.signal-card {
+  padding: 1.25rem !important;
+}
+
+.signal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.signal-name {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.signal-value-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.signal-value {
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.signal-value.rushing, .signal-value.irregular { color: #ef4444; }
+.signal-value.balanced, .signal-value.consistent, .signal-value.high, .signal-value.deep { color: #10b981; }
+.signal-value.slow, .signal-value.stable { color: #f59e0b; }
+
+.signal-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.signal-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.signal-fill.balanced, .signal-fill.consistent, .signal-fill.high, .signal-fill.deep { background: #10b981; }
+.signal-fill.rushing, .signal-fill.irregular { background: #ef4444; }
+.signal-fill.slow, .signal-fill.stable { background: #f59e0b; }
+
+/* Calendar Upgrades */
+.calendar-panel {
+  padding: 1.5rem !important;
+  margin-bottom: 1.5rem;
+}
+
+.calendar-scroll-container {
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.calendar-grid {
+  display: flex;
+  gap: 4px;
+}
+
+.calendar-week-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calendar-cell.semantic {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #161b22;
+}
+
+.calendar-cell.semantic.completed { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.2); }
+.calendar-cell.semantic.partial { background: #f59e0b; }
+.calendar-cell.semantic.skipped { background: #ef4444; }
+.calendar-cell.semantic.none { background: #161b22; }
+.calendar-cell.semantic.hidden { visibility: hidden; }
+
+.calendar-meta {
+  margin-top: 1.5rem;
+}
+
+.legend.semantic {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  justify-content: flex-start;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.l-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
