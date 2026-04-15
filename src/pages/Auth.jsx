@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { auth, googleProvider } from '../services/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { LogIn, Loader2, Target } from 'lucide-react';
@@ -7,6 +7,7 @@ import './Auth.css';
 
 export default function Auth() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -16,8 +17,9 @@ export default function Auth() {
       setError(null);
       await signInWithPopup(auth, googleProvider);
       
-      // If successful, navigate back to home to start profiling
-      navigate('/');
+      // Navigate to the intended destination or home
+      const from = location.state?.from?.pathname || '/';
+      navigate(from, { replace: true });
     } catch (err) {
       console.error("Authentication Error: ", err);
       // Format friendly error messages
