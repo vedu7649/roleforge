@@ -14,7 +14,6 @@ import './TaskExecutionCard.css';
 
 export default function TaskExecutionCard({ task, isLocked, isCompleted, onToggle, prerequisites = [] }) {
   const [expanded, setExpanded] = useState(false);
-  const [subtopicProgress, setSubtopicProgress] = useState({});
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const timerRef = useRef(null);
@@ -36,12 +35,6 @@ export default function TaskExecutionCard({ task, isLocked, isCompleted, onToggl
     return `${mins}m ${secs}s`;
   };
 
-  const toggleSubtopic = (idx) => {
-    setSubtopicProgress(prev => ({
-      ...prev,
-      [idx]: !prev[idx]
-    }));
-  };
 
   if (isLocked) {
     return (

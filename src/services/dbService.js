@@ -4,13 +4,7 @@ import {
   setDoc, 
   getDoc, 
   updateDoc, 
-  serverTimestamp,
-  collection,
-  query,
-  where,
-  getDocs,
-  orderBy,
-  limit
+  serverTimestamp
 } from 'firebase/firestore';
 
 export const dbService = {
@@ -146,6 +140,21 @@ export const dbService = {
     }
   },
 
+  // Get User Profile (Draft info)
+  getUserProfile: async (userId) => {
+    try {
+      const userRef = doc(db, 'Users', userId);
+      const docSnap = await getDoc(userRef);
+      if (docSnap.exists()) {
+        return docSnap.data().profile;
+      }
+      return null;
+    } catch (err) {
+      console.error("Error fetching user profile:", err);
+      return null;
+    }
+  },
+
   // Save/Update User Profile (Draft info like Role, Stack, etc)
   saveUserProfile: async (userId, profileData) => {
     try {
@@ -161,18 +170,42 @@ export const dbService = {
     }
   },
 
-  // Get User Profile
-  getUserProfile: async (userId) => {
+  // Daily Cache Management
+  getDailyCache: async (userId) => {
     try {
-      const userRef = doc(db, 'Users', userId);
-      const docSnap = await getDoc(userRef);
+      const cacheRef = doc(db, 'DailyCache', userId);
+      const docSnap = await getDoc(cacheRef);
       if (docSnap.exists()) {
-        return docSnap.data().profile || null;
+        const data = docSnap.data();
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Return null if data is stale (from a previous day)
+        if (data.lastUpdated !== today) {
+          return null;
+        }
+        return data.cache;
       }
       return null;
     } catch (err) {
-      console.error("Error fetching user profile:", err);
+      console.error("Error fetching daily cache:", err);
       return null;
+    }
+  },
+
+  updateDailyCache: async (userId, cacheData) => {
+    try {
+      const cacheRef = doc(db, 'DailyCache', userId);
+      const today = new Date().toISOString().split('T')[0];
+      await setDoc(cacheRef, {
+        userId,
+        cache: cacheData,
+        lastUpdated: today,
+        timestamp: serverTimestamp()
+      });
+      return true;
+    } catch (err) {
+      console.error("Error updating daily cache:", err);
+      return false;
     }
   }
 };

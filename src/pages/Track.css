@@ -1,4 +1,4 @@
-.dashboard-container {
+.track-container {
   padding-top: 2rem;
 }
 
@@ -220,98 +220,9 @@
 }
 
 @media (max-width: 768px) {
-  .dashboard-header {
+  .track-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 1.5rem;
   }
-}
-
-/* Loading Overlay Styles */
-.loading-overlay {
-  background: var(--bg);
-  min-height: 100vh;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.premium-loader-container {
-  position: relative;
-  width: 100px;
-  height: 100px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.loader-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border: 4px solid rgba(var(--primary-rgb), 0.1);
-  border-top: 4px solid var(--primary);
-  border-radius: 50%;
-  animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-}
-
-.loader-icon {
-  color: var(--primary);
-  filter: drop-shadow(0 0 12px var(--primary-glow));
-  animation: pulse-icon 2s ease-in-out infinite;
-}
-
-.loading-content {
-  width: 100%;
-  max-width: 400px;
-  padding: 0 2rem;
-}
-
-.loading-progress-container {
-  width: 100%;
-  background: rgba(255, 255, 255, 0.03);
-  padding: 1.5rem;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-}
-
-.loading-progress-bar {
-  width: 100%;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 0.75rem;
-}
-
-.loading-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--accent));
-  box-shadow: 0 0 15px var(--primary-glow);
-  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.loading-progress-stats {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text-muted);
-}
-
-.text-dim {
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.5px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes pulse-icon {
-  0%, 100% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.1); opacity: 1; }
 }

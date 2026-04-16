@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { aiService } from '../services/aiService';
-import { auth } from '../services/firebase';
+import { auth, db } from '../services/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Brain, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import './Interviewer.css';

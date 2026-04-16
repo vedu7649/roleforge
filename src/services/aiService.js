@@ -4,153 +4,261 @@ const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
+let quotaCooldownUntil = 0;
+
+class RequestQueue {
+  constructor() {
+    this.queue = [];
+    this.processing = false;
+    this.lastRequestTime = 0;
+    this.minDelay = 1000;
+  }
+  async add(requestFn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ requestFn, resolve, reject });
+      this.process();
+    });
+  }
+  async process() {
+    if (this.processing || this.queue.length === 0) return;
+    this.processing = true;
+    while (this.queue.length > 0) {
+      const { requestFn, resolve, reject } = this.queue.shift();
+      try {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        if (timeSinceLastRequest < this.minDelay) {
+          await new Promise(resolve => setTimeout(resolve, this.minDelay - timeSinceLastRequest));
+        }
+        const result = await requestFn();
+        this.lastRequestTime = Date.now();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    this.processing = false;
+  }
+}
+
+const requestQueue = new RequestQueue();
+
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (quotaCooldownUntil > Date.now()) throw new Error("COOLDOWN");
+      return await fn();
+    } catch (error) {
+      if (error.message === "COOLDOWN") throw error;
+      const isQuotaError = error.message?.includes('429') || error.message?.includes('quota');
+      if (!isQuotaError && attempt === maxRetries) throw error;
+      let delay = baseDelay * Math.pow(2, attempt);
+      if (isQuotaError) quotaCooldownUntil = Date.now() + 60000;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
+const parseAIResponse = (text) => {
+  try {
+    const clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    const match = clean.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+    return JSON.parse(match ? match[0] : clean);
+  } catch (e) {
+    console.error("Parse Error:", text);
+    throw e;
+  }
+};
+
+const SCENARIOS = [
+  "High-concurrency e-commerce traffic",
+  "Optimizing for extreme memory constraints",
+  "Edge computing in low-latency environments",
+  "Migrating a legacy monolithic system",
+  "Real-time data streaming for analytics",
+  "Building for offline-first reliability",
+  "Scalable multi-tenant SaaS architecture",
+  "Security-first fintech core systems",
+  "AI-integrated background processing",
+  "High-availability healthcare data pipelines"
+];
+
+const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
 export const aiService = {
+  fallbacks: {
+    dsa: [
+      [
+        { id: 1, title: "Two Sum", platform: "leetcode", difficulty: "easy", link: "https://leetcode.com/problems/two-sum/" },
+        { id: 2, title: "Valid Palindrome", platform: "leetcode", difficulty: "easy", link: "https://leetcode.com/problems/valid-palindrome/" }
+      ],
+      [
+        { id: 1, title: "Longest Substring Without Repeating Characters", platform: "leetcode", difficulty: "medium", link: "https://leetcode.com/problems/longest-substring-without-repeating-characters/" },
+        { id: 2, title: "Container With Most Water", platform: "leetcode", difficulty: "medium", link: "https://leetcode.com/problems/container-with-most-water/" }
+      ]
+    ],
+    project: [
+      { type: "advanced", title: "Real-time Collaboration Engine", description: "Build a distributed whiteboard with CRDT synchronization.", expectedOutcome: "Master conflict-free data types and WebSockets" },
+      { type: "intermediate", title: "Custom Metric Aggregator", description: "Design a system to collect and visualize high-resolution server metrics.", expectedOutcome: "Understand timeseries data storage and visualization." }
+    ],
+    visibility: [
+      [
+        { id: 1, title: "Open Source Contribution", problemStatement: "Find a 'good first issue' in a major React library.", solution: "Submitted a PR for documentation clarity.", difficulty: "medium" },
+        { id: 2, title: "Tech Blog Post", problemStatement: "Explain 'Hydration' in modern frameworks.", solution: "Published a 500-word deep dive on Dev.to.", difficulty: "easy" }
+      ],
+      [
+        { id: 1, title: "Build a CLI Tool", problemStatement: "Automate a tedious part of your daily workflow.", solution: "Released a Node.js CLI tool for project scaffolding.", difficulty: "medium" },
+        { id: 2, title: "Interactive Tutorial", problemStatement: "Create a guide for an advanced CSS concept.", solution: "Built a CodePen collection demonstrating Grid wizardry.", difficulty: "medium" }
+      ]
+    ],
+    tech: [
+       [{ week: "Micro-Frontend Architecture", items: [{ name: "Module Federation", type: "tool", description: "Sharing code between isolated builds." }] }],
+       [{ week: "Serverless State Management", items: [{ name: "Durable Objects", type: "tool", description: "Strongly consistent state at the edge." }] }]
+    ],
+    career: [
+      { role: "Senior Engineer", description: "Focus on cross-team leadership and system reliability.", skills: ["System Design", "Mentorship", "Budgeting"], workflow: ["Design review", "1-on-1s"] },
+      { role: "Staff Architect", description: "Strategic tech decisions and long-term roadmap planning.", skills: ["Domain Driven Design", "Executive Presence"], workflow: ["Architecture council", "RFC review"] }
+    ],
+    flashcards: [
+      [{ id: 1, question: "What is Event Sourcing?", answer: "Storing state changes as a sequence of events.", importance: "high" }],
+      [{ id: 1, question: "Define Sharding?", answer: "Partitioning data across multiple database instances.", importance: "high" }]
+    ],
+    system: [
+      { topic: "Global Load Balancing", flowSteps: ["User request", "DNS resolution", "Anycast routing", "PoP selection"], explanation: "Redirecting traffic to the nearest edge location." },
+      { topic: "Database Replication Pools", flowSteps: ["Master write", "Binlog update", "Slave pull", "Async commit"], explanation: "Using secondary nodes for read-only scaling." }
+    ]
+  },
+
+  async generateVisibilityTasks(completedDocs = [], role = "Developer", avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.visibility);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. Done: ${completedDocs.join(",")}. Unique Scenario: ${scenario}. 
+          Generate 4 UNIQUE visibility/portfolio tasks. JSON array [{id, title, problemStatement, solution, difficulty}]. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.visibility); }
+      });
+    });
+  },
+
+  async generateDSAProblems(role = "Developer", completedTopics = [], avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.dsa);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. Topics: ${completedTopics.join(",")}. Unique Context: ${scenario}.
+          Generate 2 UNIQUE DSA problems. JSON array [{id, title, platform, difficulty, link}]. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.dsa); }
+      });
+    });
+  },
+
+  async generateProjectSuggestions(stack = "", completedPhases = 0, role = "Developer", avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.project);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. Stack: ${stack}. Context: ${scenario}.
+          Generate 1 UNIQUE project idea. JSON {type, title, description, expectedOutcome}. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.project); }
+      });
+    });
+  },
+
+  async generateFlashcards(completedTopics = [], role = "Developer", avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.flashcards);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. Questions for context: ${scenario}.
+          Generate 3 UNIQUE flashcards. JSON array [{id, question, answer, importance}]. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.flashcards); }
+      });
+    });
+  },
+
+  async generateSystemDesignTopics(role = "Developer", completedPhases = 0, avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.system);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. System Constraints: ${scenario}.
+          Generate 1 UNIQUE system design topic. JSON {topic, flowSteps, explanation}. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.system); }
+      });
+    });
+  },
+
+  async generateTechAwareness(stack = "", role = "Developer", avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.tech);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Role: ${role}. Tech Trends for ${scenario}.
+          Generate 2 UNIQUE trends. JSON array [{week, items:[{name, type, description}]}]. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.tech); }
+      });
+    });
+  },
+
+  async generateCareerGuidance(role = "Developer", stack = "", completedPhases = 0, avoidList = []) {
+    return await requestQueue.add(async () => {
+      return await retryWithBackoff(async () => {
+        try {
+          if (!API_KEY) return getRandom(this.fallbacks.career);
+          const entropy = `${Date.now()}-${Math.random()}`;
+          const scenario = getRandom(SCENARIOS);
+          const prompt = `Career Advice for ${role} in ${scenario}.
+          Generate 1 UNIQUE advice block. JSON {role, description, skills, workflow}. 
+          STRICTLY AVOID: ${avoidList.join(",")}. Session: ${entropy}`;
+          const res = await model.generateContent({ contents: [{role: "user", parts: [{text: prompt}]}], generationConfig: {temperature: 1.0} });
+          return parseAIResponse(res.response.text());
+        } catch (e) { return getRandom(this.fallbacks.career); }
+      });
+    });
+  },
+
   async getStackSuggestions(role) {
     try {
-      if (!API_KEY) {
-        console.warn("No Gemini API key found, returning fallbacks.");
-        return ["React.js / Node.js", "Vue.js / Python", "SvelteKit / Go"];
-      }
-
-      const prompt = `You are a stack intelligence AI. The user wants to learn to be a ${role}. 
-      Suggest 3 valid technology stacks. 
-      Return the output STRICTLY as a JSON array of strings. Example: ["React/Node", "Vue/Python", "Angular/Java"]. Do NOT include markdown backticks.`;
-      
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      return JSON.parse(text);
-    } catch (e) {
-      console.error("AI Error (Stack Suggestions): ", e);
-      return ["MERN Stack", "PERN Stack", "JAMStack"];
-    }
+      const res = await model.generateContent(`Suggest 3 tech stacks for ${role}. JSON array of strings.`);
+      return parseAIResponse(res.response.text());
+    } catch (e) { return ["MERN", "PERN", "JAMStack"]; }
   },
-
-  async generateRoadmap(role, stack, level, timeConstraint) {
+  async generateRoadmap(role, stack, level, time) {
     try {
-      if (!API_KEY) throw new Error("No Gemini API Key");
-
-      const prompt = `You are a System Architect AI. Generate a "Guided Learning Execution Engine" roadmap for a ${level} level acting as a ${role} using the ${stack} stack. 
-      The timeline is ${timeConstraint}. 
-
-      CRITICAL: You must generate a self-correcting blueprint. 
-      Every Phase must follow this sequence:
-      1. Concepts (Overview)
-      2. Comprehensive Tasks (Detailed Guidance)
-      3. Checkpoint (Assessment Trigger)
-      4. Capstone Project (Mastery Validation)
-
-      Output strictly as JSON (NO markdown/backticks) into this structure:
-      {
-        "phases": [
-          {
-            "name": "Phase name",
-            "concepts": ["Concept 1", "Concept 2"],
-            "tasks": [
-              {
-                "id": "unique_id",
-                "title": "Task title",
-                "objective": "Deep objective of the task",
-                "why": "Business/System logic for learning this",
-                "expectedOutput": "Specific result of completion",
-                "estimatedTime": "e.g. 3-5 hours",
-                "difficulty": {
-                  "level": "easy | medium | hard",
-                  "reason": "Why is it this level"
-                },
-                "prerequisites": ["Task IDs or Concept names"],
-                "subtopics": [
-                  {
-                    "title": "Subtopic title",
-                    "steps": [
-                      { "type": "learn", "action": "Step instruction" },
-                      { "type": "do", "action": "Practice instruction" },
-                      { "type": "check", "action": "Validation instruction" }
-                    ]
-                  }
-                ],
-                "evaluationCriteria": ["Point 1", "Point 2"]
-              }
-            ],
-            "checkpoint": "Title of the milestone assessment",
-            "project": {
-              "title": "Phase project title",
-              "objective": "Project goal",
-              "lockedUntil": ["Required task IDs"]
-            }
-          }
-        ]
-      }
-      
-      Requirements:
-      - Minimum 4 Phases.
-      - Every task must have at least 2 subtopics with 3-4 micro-steps each.
-      - Ensure 'prerequisites' and 'lockedUntil' create a logical mastery gate.
-      - Adapt depth to the ${timeConstraint} constraint.`;
-
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      return JSON.parse(text);
-    } catch (e) {
-      console.error("AI Error (Roadmap): ", e);
-      return { phases: [] };
-    }
-  },
-
-  async generateInterviewQuestion(milestone) {
-    try {
-      if (!API_KEY) {
-        return {
-          question: `Explain how you would handle state management in a basic ${milestone} app?`,
-          expectedAnswer: "I would use Context API or Redux depending on component depth...",
-          difficulty: "medium"
-        };
-      }
-
-      const prompt = `You are an Interviewer AI. The developer has just completed the milestone: "${milestone}".
-      Generate a conceptual question, scenario problem, or debugging challenge to validate their progress.
-      
-      Output exactly this JSON format:
-      {
-        "question": "The question here",
-        "expectedAnswer": "The ideal answer points",
-        "difficulty": "medium or hard or easy"
-      }
-      Do NOT include markdown backticks.`;
-
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-      return JSON.parse(text);
-    } catch (e) {
-      console.error("AI Error (Interview Question): ", e);
-      return { question: "Error generating question.", expectedAnswer: "", difficulty: "easy" };
-    }
-  },
-
-  async evaluateAnswer(question, expectedAnswer, userAnswer) {
-     try {
-       if (!API_KEY) {
-         return { result: "fail", weakAreas: ["API integration missing"] };
-       }
-       
-       const prompt = `You are the Validation Layer.
-       Question: ${question}
-       Expected Answer: ${expectedAnswer}
-       User Answer: ${userAnswer}
-
-       Evaluate if the user passed. Identify specific weak areas (at most 2-3).
-       Output strictly as JSON:
-       {
-         "result": "pass" | "fail",
-         "weakAreas": ["area 1", "area 2"]
-       }
-       Do NOT include markdown backticks.`;
-
-       const result = await model.generateContent(prompt);
-       const text = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-       return JSON.parse(text);
-     } catch (e) {
-       console.error("AI Error (Evaluate Answer): ", e);
-       return { result: "fail", weakAreas: ["error evaluating answer"] };
-     }
+      const res = await model.generateContent(`Generate roadmap for ${role} using ${stack}. JSON format.`);
+      return parseAIResponse(res.response.text());
+    } catch (e) { return { phases: [] }; }
   }
 };

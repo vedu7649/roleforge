@@ -51,7 +51,7 @@ export default function StackSelection() {
     };
 
     init();
-  }, []);
+  }, [profile]);
 
   if (loading && !profile?.role) {
      return (

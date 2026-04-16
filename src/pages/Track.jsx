@@ -6,35 +6,16 @@ import { dbService } from '../services/dbService';
 import { Loader2, Zap, Lock, ChevronDown, ChevronUp } from 'lucide-react';
 import PerformanceDashboard from '../components/PerformanceDashboard';
 import TaskExecutionCard from '../components/TaskExecutionCard';
-import DSAProblemCard from '../components/DSAProblemCard';
-import ProjectSuggestionCard from '../components/ProjectSuggestionCard';
-import RevisionCard from '../components/RevisionCard';
-import VisibilityCard from '../components/VisibilityCard';
-import SystemDesignCard from '../components/SystemDesignCard';
-import TechAwarenessCard from '../components/TechAwarenessCard';
-import CareerAwarenessCard from '../components/CareerAwarenessCard';
-import './Dashboard.css';
+import './Track.css';
 
-export default function Dashboard() {
+export default function Track() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state;
-  
+
   const [roadmap, setRoadmap] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadingDetails, setLoadingDetails] = useState({ module: 'Core Engine', progress: 0, total: 8 });
   const [error, setError] = useState(null);
-
-  // Daily Cached AI Data
-  const [dailyData, setDailyData] = useState({
-    dsa: null,
-    projects: null,
-    revision: null,
-    visibility: null,
-    systemDesign: null,
-    techAwareness: null,
-    career: null
-  });
 
   // Track progress and behavioral metadata
   const [userProgress, setUserProgress] = useState({ tasks: {}, activity: [] });
@@ -46,8 +27,8 @@ export default function Dashboard() {
     statusMessage: "Initializing your behavioral analysis...",
     actionLabel: "Analyze your patterns..."
   });
-  
-  const [expandedPhase, setExpandedPhase] = useState(-1); 
+
+  const [expandedPhase, setExpandedPhase] = useState(-1);
   const [showFullRoadmap, setShowFullRoadmap] = useState(false);
 
   useEffect(() => {
@@ -59,77 +40,47 @@ export default function Dashboard() {
       setError(null);
 
       try {
-        // 1. Core Synchronization
-        setLoadingDetails({ module: 'Roadmap Engine', progress: 1, total: 8 });
+        // 1. Try to get existing roadmap from Firestore
         let activeRoadmap = state?.phases ? state : null;
-        
+
         if (!activeRoadmap && user) {
           const cloudMap = await dbService.getActiveRoadmap(user.uid);
-          if (cloudMap) activeRoadmap = cloudMap;
+          if (cloudMap) {
+            activeRoadmap = cloudMap;
+          }
         }
 
+        // 2. If no roadmap, try to get profile data to generate one
         let currentProfile = state?.stack ? state : null;
         if (!activeRoadmap && !currentProfile && user) {
           const cloudProfile = await dbService.getUserProfile(user.uid);
-          if (cloudProfile && cloudProfile.stack) currentProfile = cloudProfile;
+          if (cloudProfile && cloudProfile.stack) {
+            currentProfile = cloudProfile;
+          }
         }
 
+        // 3. Generate new roadmap if profile exists but roadmap doesn't
         if (!activeRoadmap && currentProfile?.stack) {
           activeRoadmap = await aiService.generateRoadmap(
-            currentProfile.role, 
-            currentProfile.stack, 
-            currentProfile.level, 
+            currentProfile.role,
+            currentProfile.stack,
+            currentProfile.level,
             currentProfile.timeConstraint
           );
+
           if (activeRoadmap && user) {
             await dbService.saveRoadmap(user.uid, activeRoadmap, currentProfile);
           }
         }
 
         if (!activeRoadmap) {
-          throw new Error("No active roadmap found. Please initialize a new path.");
+          throw new Error("No active roadmap found. Please initialize a new path in the Profiler.");
         }
 
-        // 2. Load Progress
-        setLoadingDetails({ module: 'Behavior History', progress: 2, total: 8 });
+        // 4. Load Progress from Firestore
         if (user) {
           const progress = await dbService.getUserProgress(user.uid);
           if (isMounted) setUserProgress(progress);
-        }
-
-        // 3. Sequential Daily Cache Intelligence
-        if (user) {
-          let cache = await dbService.getDailyCache(user.uid);
-          const needsGeneration = !cache;
-
-          if (needsGeneration) {
-            cache = {};
-            const role = activeRoadmap.role || currentProfile?.role || 'Developer';
-            const stack = activeRoadmap.stack || currentProfile?.stack || '';
-            const completedPhases = activeRoadmap.phases?.length || 0;
-            const completedTopics = Object.keys(userProgress.tasks);
-
-            // Sequential AI Generation
-            const modules = [
-              { key: 'dsa', name: 'DSA Algorithm Forge', fn: () => aiService.generateDSAProblems(role, completedTopics) },
-              { key: 'projects', name: 'System Complexity Lab', fn: () => aiService.generateProjectSuggestions(stack, completedPhases, role) },
-              { key: 'revision', name: 'Retrieval Practice Engine', fn: () => aiService.generateFlashcards(completedTopics, role) },
-              { key: 'visibility', name: 'Visibility Layer', fn: () => aiService.generateVisibilityTasks(completedTopics, role) },
-              { key: 'systemDesign', name: 'Architectural Thinking', fn: () => aiService.generateSystemDesignTopics(role, completedPhases, stack) },
-              { key: 'techAwareness', name: 'Market Intelligence', fn: () => aiService.generateTechAwareness(stack, role) },
-              { key: 'career', name: 'Career Trajectory Analysis', fn: () => aiService.generateCareerGuidance(role, stack, completedPhases) }
-            ];
-
-            for (let i = 0; i < modules.length; i++) {
-              const mod = modules[i];
-              setLoadingDetails({ module: mod.name, progress: i + 2, total: 8 });
-              cache[mod.key] = await mod.fn();
-            }
-
-            await dbService.updateDailyCache(user.uid, cache);
-          }
-
-          if (isMounted) setDailyData(cache);
         }
 
         if (isMounted) {
@@ -138,7 +89,7 @@ export default function Dashboard() {
         }
       } catch (err) {
         console.error("Dashboard Init Error:", err);
-        
+
         if (err.message?.includes('offline') || err.message?.includes('network')) {
           if (state?.phases) {
             setRoadmap(state);
@@ -151,7 +102,7 @@ export default function Dashboard() {
             setError(err.message || "Failed to initialize learning engine.");
           }
         }
-        
+
         if (isMounted) setLoading(false);
       }
     };
@@ -178,7 +129,7 @@ export default function Dashboard() {
     if (!roadmap) return { completion: 0, streak: 0, skillScore: 0 };
     const allTasks = roadmap.phases.flatMap(p => p.tasks);
     const completedCount = allTasks.filter(t => userProgress.tasks[t.id]?.isCompleted).length;
-    
+
     // Calculate streak from activity history
     const streak = calculateStreak(userProgress.activity);
 
@@ -200,7 +151,7 @@ export default function Dashboard() {
     const dates = [...new Set(activity.map(a => a.timestamp))].sort().reverse();
     let streak = 0;
     let today = new Date().toISOString().split('T')[0];
-    
+
     // Check if active today or yesterday
     if (dates[0] !== today && dates[0] !== getYesterday()) return 0;
 
@@ -216,7 +167,7 @@ export default function Dashboard() {
   // The "ONE TASK" selector logic
   const getHeroTask = () => {
     if (!roadmap) return null;
-    
+
     for (const phase of roadmap.phases) {
       for (const task of phase.tasks) {
         if (!userProgress.tasks[task.id]?.isCompleted && checkPrerequisites(task.prerequisites)) {
@@ -229,14 +180,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!userProgress.activity) return;
-    
+
     // Behavior Signal Calculation Logic
     const calculateSignals = () => {
       const recent = userProgress.activity.slice(-5);
       if (recent.length === 0) return;
 
       let signals = { ...behaviorSignals };
-      
+
       // 1. Pace Signal
       const totalTime = recent.reduce((sum, a) => sum + (a.timeSpent || 0), 0);
       const avgTime = totalTime / recent.length;
@@ -270,36 +221,11 @@ export default function Dashboard() {
   }, [userProgress, calculateStreak]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
-    const progressPercent = Math.round((loadingDetails.progress / loadingDetails.total) * 100);
     return (
-      <div className="full-center flex-col animate-fade-in loading-overlay">
-        <div className="premium-loader-container">
-          <div className="loader-ring"></div>
-          <Zap className="loader-icon" size={32} />
-        </div>
-        
-        <div className="loading-content text-center mt-8">
-          <h2 className="text-2xl font-bold mb-2 tracking-tight">Optimizing Learning Path</h2>
-          <p className="text-muted mb-6">Initialized: <span className="text-accent font-medium">{loadingDetails.module}</span></p>
-          
-          <div className="loading-progress-container">
-            <div className="loading-progress-bar">
-              <div 
-                className="loading-progress-fill" 
-                style={{ width: `${progressPercent}%` }}
-              ></div>
-            </div>
-            <div className="loading-progress-stats">
-               <span>Step {loadingDetails.progress} of {loadingDetails.total}</span>
-               <span>{progressPercent}%</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="loading-foot-meta mt-12 text-sm text-dim">
-           <Loader2 className="spinner inline mr-2" size={14} /> 
-           Building a data-driven curriculum...
-        </div>
+      <div className="full-center flex-col animate-fade-in">
+        <Loader2 className="spinner mb-4" size={48} />
+        <h2 className="text-xl">Initializing Guided Engine...</h2>
+        <p className="text-muted">Synchronizing your progress with RoleForge Cloud</p>
       </div>
     );
   }
@@ -312,14 +238,14 @@ export default function Dashboard() {
         <h2 className="text-danger mb-4">Connection Notice</h2>
         <p className="text-muted mb-6 text-center" style={{ maxWidth: '400px' }}>{error}</p>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={() => window.location.reload()}
           >
             Retry Connection
           </button>
-          <button 
-            className="btn btn-outline" 
+          <button
+            className="btn btn-outline"
             onClick={navigateToProfiler}
           >
             Return to Profiler
@@ -334,7 +260,7 @@ export default function Dashboard() {
     if (!user) return;
 
     const isCompleted = !userProgress.tasks[taskId]?.isCompleted;
-    
+
     // Optimistic Update
     const newProgress = {
       ...userProgress,
@@ -342,18 +268,18 @@ export default function Dashboard() {
         ...userProgress.tasks,
         [taskId]: { isCompleted, timeSpent: sessionTime }
       },
-      activity: [...userProgress.activity, { 
-        taskId, 
-        status: isCompleted ? 'completed' : 'partial', 
+      activity: [...userProgress.activity, {
+        taskId,
+        status: isCompleted ? 'completed' : 'partial',
         timeSpent: sessionTime,
         timestamp: new Date().toISOString().split('T')[0]
       }]
     };
     setUserProgress(newProgress);
-    
+
     // Cloud Sync
     await dbService.updateTaskProgress(user.uid, taskId, isCompleted, { timeSpent: sessionTime });
-    
+
     // Logic for checkpoints
     const completedInPhase = phase.tasks.filter(t => (t.id === taskId ? isCompleted : userProgress.tasks[t.id]?.isCompleted)).length;
     if (completedInPhase === Math.floor(phase.tasks.length / 2) && isCompleted) {
@@ -364,9 +290,9 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="dashboard-container main-content animate-fade-in">
-      <PerformanceDashboard 
-        stats={calculateOverallStats()} 
+    <div className="track-container main-content animate-fade-in">
+      <PerformanceDashboard
+        stats={calculateOverallStats()}
         behaviorSignals={behaviorSignals}
         activityHistory={userProgress.activity}
         timeConstraint={roadmap?.timeConstraint || state?.timeConstraint}
@@ -377,9 +303,9 @@ export default function Dashboard() {
            <h2 className="section-title">TODAY'S FOCUS</h2>
            <span className="text-muted text-sm">One task. Full mastery.</span>
         </div>
-        
+
         {getHeroTask() ? (
-          <TaskExecutionCard 
+          <TaskExecutionCard
             task={getHeroTask().task}
             isLocked={false}
             isCompleted={userProgress.tasks[getHeroTask().task.id]?.isCompleted}
@@ -401,48 +327,6 @@ export default function Dashboard() {
          </button>
       </div>
 
-      {/* LAYER 1: DAILY CORE */}
-      <DSAProblemCard 
-        initialData={dailyData.dsa} 
-        role={state?.role || roadmap?.role} 
-        completedTopics={Object.keys(userProgress.tasks)} 
-      />
-      <ProjectSuggestionCard 
-        initialData={dailyData.projects} 
-        stack={state?.stack || roadmap?.stack} 
-        completedPhases={roadmap?.phases?.length || 0} 
-      />
-      <RevisionCard 
-        initialData={dailyData.revision} 
-        completedTopics={Object.keys(userProgress.tasks)} 
-      />
-
-      {/* LAYER 2: WEEKLY GROWTH */}
-      <VisibilityCard 
-        initialData={dailyData.visibility}
-        completedTasks={Object.entries(userProgress.tasks)
-          .filter(([, t]) => t.isCompleted)
-          .map(([id]) => id)} 
-        role={roadmap?.role || state?.role || 'Developer'} 
-      />
-      <SystemDesignCard 
-        initialData={dailyData.systemDesign} 
-        role={roadmap?.role || state?.role} 
-        completedPhases={roadmap?.phases?.length || 0} 
-        stack={roadmap?.stack || state?.stack} 
-      />
-
-      {/* LAYER 3: STRATEGIC AWARENESS */}
-      <TechAwarenessCard 
-        initialData={dailyData.techAwareness} 
-        role={roadmap?.role || state?.role} 
-        stack={roadmap?.stack || state?.stack} 
-      />
-      <CareerAwarenessCard 
-        initialData={dailyData.career} 
-        currentRole={state?.role || roadmap?.role || 'Full Stack Developer'} 
-      />
-
       {showFullRoadmap && (
         <div className="roadmap-grid animate-slide-up">
         {roadmap?.phases?.map((phase, pIdx) => (
@@ -456,14 +340,14 @@ export default function Dashboard() {
                <div className="phase-stats">
                   <span>{calculatePhaseProgress(phase.tasks)}% Complete</span>
                   <div className="progress-bar-mini">
-                    <div 
-                      className="progress-fill" 
+                    <div
+                      className="progress-fill"
                       style={{ width: `${calculatePhaseProgress(phase.tasks)}%` }}
                     />
                   </div>
                </div>
             </div>
-            
+
             {expandedPhase === pIdx && (
               <div className="phase-content animate-slide-up">
                 <div className="concept-tags">
@@ -474,7 +358,7 @@ export default function Dashboard() {
 
                 <div className="task-list">
                   {phase.tasks?.map((task) => (
-                    <TaskExecutionCard 
+                    <TaskExecutionCard
                       key={task.id}
                       task={task}
                       isLocked={!checkPrerequisites(task.prerequisites)}
@@ -484,7 +368,7 @@ export default function Dashboard() {
                     />
                   ))}
                 </div>
-                
+
                 {phase.project && (
                    <div className={`project-lock-card glass-panel ${!checkPrerequisites(phase.project.lockedUntil) ? 'locked' : ''}`}>
                      <div className="project-body">
