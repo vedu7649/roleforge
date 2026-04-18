@@ -113,7 +113,7 @@ function App() {
                     style={{ width: '100%', padding: '0.65rem 1rem', fontSize: '0.85rem', marginBottom: '0.5rem' }}
                     onClick={() => {
                       setProfileMenuOpen(false);
-                      window.location.href = '/profile';
+                      navigate('/profile');
                     }}
                   >
                     My Courses
