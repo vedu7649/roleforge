@@ -29,7 +29,7 @@ export default function Track() {
   });
 
   const [expandedPhase, setExpandedPhase] = useState(-1);
-  const [showFullRoadmap, setShowFullRoadmap] = useState(false);
+  const [showFullRoadmap, setShowFullRoadmap] = useState(true); // Show roadmap by default
 
   useEffect(() => {
     let isMounted = true;
@@ -40,6 +40,25 @@ export default function Track() {
       setError(null);
 
       try {
+        // Check if user has a profile first
+        let currentProfile = state?.role ? state : null;
+        if (!currentProfile && user) {
+          const cloudProfile = await dbService.getUserProfile(user.uid);
+          if (!cloudProfile || !cloudProfile.role) {
+            // No profile found, redirect to profiler
+            console.log("Track: No profile found, redirecting to profiler");
+            navigate('/');
+            return;
+          }
+          currentProfile = cloudProfile;
+        }
+
+        if (!currentProfile?.role) {
+          console.log("Track: No profile available, redirecting to profiler");
+          navigate('/');
+          return;
+        }
+
         // 1. Try to get existing roadmap from Firestore
         let activeRoadmap = state?.phases ? state : null;
 
@@ -51,7 +70,6 @@ export default function Track() {
         }
 
         // 2. If no roadmap, try to get profile data to generate one
-        let currentProfile = state?.stack ? state : null;
         if (!activeRoadmap && !currentProfile && user) {
           const cloudProfile = await dbService.getUserProfile(user.uid);
           if (cloudProfile && cloudProfile.stack) {
@@ -59,7 +77,7 @@ export default function Track() {
           }
         }
 
-        // 3. Generate new roadmap if profile exists but roadmap doesn't
+        // 3. Generate new roadmap if profile exists but roadmap doesn't, or if role changed
         if (!activeRoadmap && currentProfile?.stack) {
           activeRoadmap = await aiService.generateRoadmap(
             currentProfile.role,
@@ -68,12 +86,32 @@ export default function Track() {
             currentProfile.timeConstraint
           );
 
-          if (activeRoadmap && user) {
+          activeRoadmap = normalizeRoadmap(activeRoadmap);
+
+          if (activeRoadmap && activeRoadmap.phases && activeRoadmap.phases.length > 0 && user) {
+            await dbService.saveRoadmap(user.uid, activeRoadmap, currentProfile);
+          }
+        } else if (activeRoadmap && currentProfile?.role && activeRoadmap.role !== currentProfile.role) {
+          // Regenerate roadmap if role changed
+          activeRoadmap = await aiService.generateRoadmap(
+            currentProfile.role,
+            currentProfile.stack,
+            currentProfile.level,
+            currentProfile.timeConstraint
+          );
+
+          activeRoadmap = normalizeRoadmap(activeRoadmap);
+
+          if (activeRoadmap && activeRoadmap.phases && activeRoadmap.phases.length > 0 && user) {
             await dbService.saveRoadmap(user.uid, activeRoadmap, currentProfile);
           }
         }
 
-        if (!activeRoadmap) {
+        if (activeRoadmap) {
+          activeRoadmap = normalizeRoadmap(activeRoadmap);
+        }
+
+        if (!activeRoadmap || !activeRoadmap.phases || activeRoadmap.phases.length === 0) {
           throw new Error("No active roadmap found. Please initialize a new path in the Profiler.");
         }
 
@@ -140,6 +178,48 @@ export default function Track() {
     };
   };
 
+  const normalizeRoadmap = (roadmap) => {
+    if (!roadmap || !Array.isArray(roadmap.phases)) return roadmap;
+
+    return {
+      ...roadmap,
+      phases: roadmap.phases.map((phase, phaseIndex) => {
+        const previousPhaseIds = roadmap.phases[phaseIndex - 1]?.tasks?.map(t => t.id) || [];
+        return {
+          ...phase,
+          tasks: (phase.tasks || []).map((task, taskIndex) => {
+            const safeId = task.id || task.title?.toLowerCase().replace(/[^a-z0-9]+/g, '_') || `phase${phaseIndex}_task${taskIndex}`;
+            const description = task.description || task.summary || task.objective || 'Advance your learning with this task.';
+
+            return {
+              id: safeId,
+              title: task.title || task.name || `Task ${taskIndex + 1}`,
+              description,
+              objective: task.objective || description,
+              why: task.why || task.rationale || 'This task helps you progress through the roadmap.',
+              expectedOutput: task.expectedOutput || task.successCriteria || task.description || 'Finish the task and log your progress.',
+              difficulty: task.difficulty || task.level || 'Medium',
+              estimatedTime: task.estimatedTime || task.duration || '15 min',
+              subtopics: Array.isArray(task.subtopics) && task.subtopics.length > 0
+                ? task.subtopics
+                : [{
+                    title: 'Overview',
+                    steps: [{ type: 'learn', action: description }]
+                  }],
+              prerequisites: Array.isArray(task.prerequisites)
+                ? task.prerequisites
+                : task.prerequisite || previousPhaseIds.slice(-1)
+            };
+          }),
+          project: {
+            ...phase.project,
+            lockedUntil: Array.isArray(phase.project?.lockedUntil) ? phase.project.lockedUntil : []
+          }
+        };
+      })
+    };
+  };
+
   const getYesterday = useCallback(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -156,10 +236,10 @@ export default function Track() {
     if (dates[0] !== today && dates[0] !== getYesterday()) return 0;
 
     for (let i = 0; i < dates.length; i++) {
-        if (i === 0) { streak++; continue; }
-        const diff = (new Date(dates[i-1]) - new Date(dates[i])) / (1000 * 60 * 60 * 24);
-        if (diff === 1) streak++;
-        else break;
+      if (i === 0) { streak++; continue; }
+      const diff = (new Date(dates[i - 1]) - new Date(dates[i])) / (1000 * 60 * 60 * 24);
+      if (diff === 1) streak++;
+      else break;
     }
     return streak;
   }, [getYesterday]);
@@ -168,6 +248,7 @@ export default function Track() {
   const getHeroTask = () => {
     if (!roadmap) return null;
 
+    // First pass: find tasks with met prerequisites
     for (const phase of roadmap.phases) {
       for (const task of phase.tasks) {
         if (!userProgress.tasks[task.id]?.isCompleted && checkPrerequisites(task.prerequisites)) {
@@ -175,6 +256,17 @@ export default function Track() {
         }
       }
     }
+
+    // Second pass: if no tasks with met prerequisites, return first incomplete task
+    // This ensures there's always something to do
+    for (const phase of roadmap.phases) {
+      for (const task of phase.tasks) {
+        if (!userProgress.tasks[task.id]?.isCompleted) {
+          return { task, phase };
+        }
+      }
+    }
+
     return null;
   };
 
@@ -283,9 +375,9 @@ export default function Track() {
     // Logic for checkpoints
     const completedInPhase = phase.tasks.filter(t => (t.id === taskId ? isCompleted : userProgress.tasks[t.id]?.isCompleted)).length;
     if (completedInPhase === Math.floor(phase.tasks.length / 2) && isCompleted) {
-        setTimeout(() => {
-          navigate('/interviewer', { state: { ...state, milestone: phase.checkpoint, role: roadmap.role || state?.role }});
-        }, 1000);
+      setTimeout(() => {
+        navigate('/interviewer', { state: { ...state, milestone: phase.checkpoint, role: roadmap.role || state?.role } });
+      }, 1000);
     }
   };
 
@@ -300,8 +392,8 @@ export default function Track() {
 
       <div className="hero-task-section">
         <div className="section-header">
-           <h2 className="section-title">TODAY'S FOCUS</h2>
-           <span className="text-muted text-sm">One task. Full mastery.</span>
+          <h2 className="section-title">TODAY'S FOCUS</h2>
+          <span className="text-muted text-sm">One task. Full mastery.</span>
         </div>
 
         {getHeroTask() ? (
@@ -310,90 +402,98 @@ export default function Track() {
             isLocked={false}
             isCompleted={userProgress.tasks[getHeroTask().task.id]?.isCompleted}
             onToggle={() => toggleTask(getHeroTask().task.id, getHeroTask().phase)}
+            showTimer={true} // Hero task always shows timer
           />
         ) : (
           <div className="glass-panel p-8 text-center animate-fade-in">
-             <Zap color="var(--accent)" size={32} className="mx-auto mb-4" />
-             <h3>All Targeted Tasks Complete!</h3>
-             <p className="text-muted">You've mastered today's objectives. Check the full roadmap for what's next.</p>
+            <Zap color="var(--accent)" size={32} className="mx-auto mb-4" />
+            <h3>All Targeted Tasks Complete!</h3>
+            <p className="text-muted">You've mastered today's objectives. Check the full roadmap for what's next.</p>
           </div>
         )}
       </div>
 
       <div className="curriculum-toggle">
-         <button className="btn-text" onClick={() => setShowFullRoadmap(!showFullRoadmap)}>
-            {showFullRoadmap ? "Collapse Roadmap" : "View Full Course Curriculum"}
-            {showFullRoadmap ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-         </button>
+        <button className="btn-text" onClick={() => setShowFullRoadmap(!showFullRoadmap)}>
+          {showFullRoadmap ? "Hide Full Curriculum" : "View Full Course Curriculum"}
+          {showFullRoadmap ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
       </div>
 
       {showFullRoadmap && (
         <div className="roadmap-grid animate-slide-up">
-        {roadmap?.phases?.map((phase, pIdx) => (
-          <div key={pIdx} className={`phase-block ${expandedPhase === pIdx ? 'phase-expanded' : ''}`}>
-            <div className="phase-header" onClick={() => setExpandedPhase(expandedPhase === pIdx ? -1 : pIdx)} style={{ cursor: 'pointer' }}>
-               <div className="phase-info">
-                  {expandedPhase === pIdx ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                  <h3 className="phase-title">{phase.name}</h3>
-                  <div className="phase-badge">Phase {pIdx + 1}</div>
-               </div>
-               <div className="phase-stats">
-                  <span>{calculatePhaseProgress(phase.tasks)}% Complete</span>
-                  <div className="progress-bar-mini">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${calculatePhaseProgress(phase.tasks)}%` }}
-                    />
+          {roadmap?.phases?.map((phase, pIdx) => {
+            const isPhaseAccessible = pIdx === 0 || roadmap.phases[pIdx - 1].tasks.every(task => userProgress.tasks[task.id]?.isCompleted);
+            const isPhaseExpanded = expandedPhase === pIdx;
+
+            return (
+              <div key={pIdx} className={`phase-block ${isPhaseExpanded ? 'phase-expanded' : ''} ${!isPhaseAccessible ? 'phase-locked' : ''}`}>
+                <div className="phase-header" onClick={() => setExpandedPhase(expandedPhase === pIdx ? -1 : pIdx)} style={{ cursor: 'pointer' }}>
+                  <div className="phase-info">
+                    {isPhaseExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    <h3 className="phase-title">{phase.name}</h3>
+                    <div className="phase-badge">Phase {pIdx + 1}</div>
+                    {!isPhaseAccessible && <Lock size={16} className="phase-lock-icon" />}
                   </div>
-               </div>
-            </div>
-
-            {expandedPhase === pIdx && (
-              <div className="phase-content animate-slide-up">
-                <div className="concept-tags">
-                  {phase.concepts?.map((c, i) => (
-                     <span key={i} className="badge-outline">{c}</span>
-                  ))}
+                  <div className="phase-stats">
+                    <span>{calculatePhaseProgress(phase.tasks)}% Complete</span>
+                    <div className="progress-bar-mini">
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${calculatePhaseProgress(phase.tasks)}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="task-list">
-                  {phase.tasks?.map((task) => (
-                    <TaskExecutionCard
-                      key={task.id}
-                      task={task}
-                      isLocked={!checkPrerequisites(task.prerequisites)}
-                      isCompleted={userProgress.tasks[task.id]?.isCompleted}
-                      prerequisites={task.prerequisites}
-                      onToggle={() => toggleTask(task.id, phase)}
-                    />
-                  ))}
-                </div>
+                {isPhaseExpanded && (
+                  <div className="phase-content animate-slide-up">
+                    <div className="concept-tags">
+                      {phase.concepts?.map((c, i) => (
+                        <span key={i} className="badge-outline">{c}</span>
+                      ))}
+                    </div>
 
-                {phase.project && (
-                   <div className={`project-lock-card glass-panel ${!checkPrerequisites(phase.project.lockedUntil) ? 'locked' : ''}`}>
-                     <div className="project-body">
-                        <Zap size={20} className="icon-glow" />
-                        <div className="project-info">
-                           <h4>Capstone: {phase.project.title}</h4>
-                           <p className="text-sm text-muted">{phase.project.objective}</p>
+                    <div className="task-list">
+                      {phase.tasks?.map((task) => (
+                        <TaskExecutionCard
+                          key={task.id}
+                          task={task}
+                          isLocked={!checkPrerequisites(task.prerequisites) || !isPhaseAccessible}
+                          isCompleted={userProgress.tasks[task.id]?.isCompleted}
+                          prerequisites={task.prerequisites}
+                          onToggle={() => toggleTask(task.id, phase)}
+                          showTimer={getHeroTask()?.task.id === task.id} // Only show timer for hero task
+                        />
+                      ))}
+                    </div>
+
+                    {phase.project && (
+                      <div className={`project-lock-card glass-panel ${!checkPrerequisites(phase.project.lockedUntil) ? 'locked' : ''}`}>
+                        <div className="project-body">
+                          <Zap size={20} className="icon-glow" />
+                          <div className="project-info">
+                            <h4>Capstone: {phase.project.title}</h4>
+                            <p className="text-sm text-muted">{phase.project.objective}</p>
+                          </div>
                         </div>
-                     </div>
-                     {!checkPrerequisites(phase.project.lockedUntil) && (
-                        <div className="lock-tag"><Lock size={12} /> Master tasks to unlock</div>
-                     )}
-                   </div>
-                )}
+                        {!checkPrerequisites(phase.project.lockedUntil) && (
+                          <div className="lock-tag"><Lock size={12} /> Master tasks to unlock</div>
+                        )}
+                      </div>
+                    )}
 
-                <div className="checkpoint-divider">
-                   <div className="line"></div>
-                   <span className="checkpoint-text">Checkpoint: {phase.checkpoint}</span>
-                   <div className="line"></div>
-                </div>
+                    <div className="checkpoint-divider">
+                      <div className="line"></div>
+                      <span className="checkpoint-text">Checkpoint: {phase.checkpoint}</span>
+                      <div className="line"></div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

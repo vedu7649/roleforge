@@ -10,20 +10,18 @@ import Interviewer from './pages/Interviewer';
 import Auth from './pages/Auth';
 import Track from './pages/Track';
 import Grind from './pages/Grind';
+import Profile from './pages/Profile';
 import './App.css';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState('light');
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-
-  useEffect(() => {
+  const [theme, setTheme] = useState(() => {
     const stored = localStorage.getItem('roleforge-theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initialTheme = stored || (prefersDark ? 'dark' : 'light');
-    setTheme(initialTheme);
-  }, []);
+    return stored || (prefersDark ? 'dark' : 'light');
+  });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -67,7 +65,8 @@ function App() {
           <span className="brand-text">RoleForge <span className="brand-icon">AI</span></span>
         </Link>
         
-        <div className="nav-links">
+        {/* Desktop Links - Hidden on Mobile via CSS */}
+        <div className="nav-links desktop-only">
           <Link to="/track" className={`nav-link ${location.pathname === '/track' ? 'active' : ''}`}>
             <Activity size={18} />
             <span>Track</span>
@@ -78,7 +77,7 @@ function App() {
           </Link>
         </div>
         
-        <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="nav-actions">
           <button
             type="button"
             className="btn btn-outline theme-toggle"
@@ -87,38 +86,38 @@ function App() {
           >
             <SunMoon size={18} />
           </button>
+          
           {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', position: 'relative' }}>
+            <div className="profile-wrapper">
               <button
                 type="button"
-                className="btn btn-outline"
-                style={{ padding: 0, minWidth: '40px', minHeight: '40px', borderRadius: '50%', overflow: 'hidden' }}
+                className="btn btn-outline profile-trigger"
                 onClick={() => setProfileMenuOpen(prev => !prev)}
                 aria-label="Open profile menu"
               >
                 {user.photoURL ? (
-                  <img src={user.photoURL} alt="Profile" style={{ width: '40px', height: '40px', objectFit: 'cover' }} />
+                  <img src={user.photoURL} alt="Profile" className="avatar-img" />
                 ) : (
                   <User size={20} />
                 )}
               </button>
               {profileMenuOpen && (
-                <div style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 0.5rem)',
-                  right: 0,
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '0.75rem',
-                  boxShadow: '0 14px 30px rgba(15, 23, 42, 0.12)',
-                  padding: '0.75rem',
-                  zIndex: 60,
-                  width: '220px'
-                }}>
-                  <div style={{ marginBottom: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                <div className="profile-dropdown">
+                  <div className="dropdown-user-info">
                     Logged in as
-                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.25rem' }}>{user.email}</div>
+                    <div className="user-email">{user.email}</div>
                   </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '0.65rem 1rem', fontSize: '0.85rem', marginBottom: '0.5rem' }}
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      window.location.href = '/profile';
+                    }}
+                  >
+                    My Courses
+                  </button>
                   <button
                     type="button"
                     className="btn btn-outline"
@@ -134,10 +133,32 @@ function App() {
               )}
             </div>
           ) : (
-            <Link to="/login" className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.8rem'}}>Sign In</Link>
+            <Link to="/login" className="btn btn-primary btn-sm">Sign In</Link>
           )}
         </div>
       </nav>
+    );
+  };
+
+  const MobileBottomNav = ({ user }) => {
+    const location = useLocation();
+    if (!user) return null;
+
+    return (
+      <div className="mobile-bottom-nav">
+        <Link to="/track" className={`mobile-nav-item ${location.pathname === '/track' ? 'active' : ''}`}>
+          <Activity size={20} />
+          <span>Track</span>
+        </Link>
+        <Link to="/grind" className={`mobile-nav-item ${location.pathname === '/grind' ? 'active' : ''}`}>
+          <Zap size={20} />
+          <span>Grind</span>
+        </Link>
+        <Link to="/profile" className={`mobile-nav-item ${location.pathname === '/profile' ? 'active' : ''}`}>
+          <User size={20} />
+          <span>Me</span>
+        </Link>
+      </div>
     );
   };
 
@@ -145,46 +166,55 @@ function App() {
     <Router>
       <div className="layout-container">
         <Navbar user={user} theme={theme} setTheme={setTheme} profileMenuOpen={profileMenuOpen} setProfileMenuOpen={setProfileMenuOpen} />
+        
+        <main className="main-content-wrapper">
+          <Routes>
+            <Route path="/login" element={<Auth />} />
+            
+            <Route path="/" element={
+              <ProtectedRoute>
+                <Profiler />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/stack-selection" element={
+              <ProtectedRoute>
+                <StackSelection />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/track" element={
+              <ProtectedRoute>
+                <Track />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/grind" element={
+              <ProtectedRoute>
+                <Grind />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/profile" element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/interviewer" element={
+              <ProtectedRoute>
+                <Interviewer />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </main>
 
-        <Routes>
-          <Route path="/login" element={<Auth />} />
-          
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Profiler />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/stack-selection" element={
-            <ProtectedRoute>
-              <StackSelection />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/track" element={
-            <ProtectedRoute>
-              <Track />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/grind" element={
-            <ProtectedRoute>
-              <Grind />
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/interviewer" element={
-            <ProtectedRoute>
-              <Interviewer />
-            </ProtectedRoute>
-          } />
-        </Routes>
+        <MobileBottomNav user={user} />
       </div>
     </Router>
   );

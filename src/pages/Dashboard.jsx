@@ -19,7 +19,7 @@ export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state;
-  
+
   const [roadmap, setRoadmap] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState({ module: 'Core Engine', progress: 0, total: 8 });
@@ -46,9 +46,9 @@ export default function Dashboard() {
     statusMessage: "Initializing your behavioral analysis...",
     actionLabel: "Analyze your patterns..."
   });
-  
-  const [expandedPhase, setExpandedPhase] = useState(-1); 
-  const [showFullRoadmap, setShowFullRoadmap] = useState(false);
+
+  const [expandedPhase, setExpandedPhase] = useState(-1);
+  const [showFullRoadmap, setShowFullRoadmap] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -62,23 +62,32 @@ export default function Dashboard() {
         // 1. Core Synchronization
         setLoadingDetails({ module: 'Roadmap Engine', progress: 1, total: 8 });
         let activeRoadmap = state?.phases ? state : null;
-        
+
         if (!activeRoadmap && user) {
           const cloudMap = await dbService.getActiveRoadmap(user.uid);
           if (cloudMap) activeRoadmap = cloudMap;
         }
 
-        let currentProfile = state?.stack ? state : null;
+        let currentProfile = state?.role ? state : null;
         if (!activeRoadmap && !currentProfile && user) {
           const cloudProfile = await dbService.getUserProfile(user.uid);
-          if (cloudProfile && cloudProfile.stack) currentProfile = cloudProfile;
+          if (cloudProfile && cloudProfile.role) currentProfile = cloudProfile;
         }
 
-        if (!activeRoadmap && currentProfile?.stack) {
+        // Check if we need a new roadmap (role/stack changed)
+        const needsNewRoadmap = !activeRoadmap ||
+          (currentProfile && (
+            activeRoadmap.role !== currentProfile.role ||
+            activeRoadmap.stack !== currentProfile.stack ||
+            activeRoadmap.level !== currentProfile.level ||
+            activeRoadmap.timeConstraint !== currentProfile.timeConstraint
+          ));
+
+        if (needsNewRoadmap && currentProfile?.stack) {
           activeRoadmap = await aiService.generateRoadmap(
-            currentProfile.role, 
-            currentProfile.stack, 
-            currentProfile.level, 
+            currentProfile.role,
+            currentProfile.stack,
+            currentProfile.level,
             currentProfile.timeConstraint
           );
           if (activeRoadmap && user) {
@@ -109,7 +118,7 @@ export default function Dashboard() {
             const completedPhases = activeRoadmap.phases?.length || 0;
             const completedTopics = Object.keys(userProgress.tasks);
 
-            // Sequential AI Generation
+            // Sequential AI Generation with error handling
             const modules = [
               { key: 'dsa', name: 'DSA Algorithm Forge', fn: () => aiService.generateDSAProblems(role, completedTopics) },
               { key: 'projects', name: 'System Complexity Lab', fn: () => aiService.generateProjectSuggestions(stack, completedPhases, role) },
@@ -123,7 +132,14 @@ export default function Dashboard() {
             for (let i = 0; i < modules.length; i++) {
               const mod = modules[i];
               setLoadingDetails({ module: mod.name, progress: i + 2, total: 8 });
-              cache[mod.key] = await mod.fn();
+              try {
+                cache[mod.key] = await mod.fn();
+                console.log(`Dashboard: Generated ${mod.key} successfully`);
+              } catch (error) {
+                console.error(`Dashboard: Failed to generate ${mod.key}:`, error);
+                // Use fallback data for this module
+                cache[mod.key] = aiService.fallbacks[mod.key] || [];
+              }
             }
 
             await dbService.updateDailyCache(user.uid, cache);
@@ -138,7 +154,7 @@ export default function Dashboard() {
         }
       } catch (err) {
         console.error("Dashboard Init Error:", err);
-        
+
         if (err.message?.includes('offline') || err.message?.includes('network')) {
           if (state?.phases) {
             setRoadmap(state);
@@ -151,7 +167,7 @@ export default function Dashboard() {
             setError(err.message || "Failed to initialize learning engine.");
           }
         }
-        
+
         if (isMounted) setLoading(false);
       }
     };
@@ -178,7 +194,7 @@ export default function Dashboard() {
     if (!roadmap) return { completion: 0, streak: 0, skillScore: 0 };
     const allTasks = roadmap.phases.flatMap(p => p.tasks);
     const completedCount = allTasks.filter(t => userProgress.tasks[t.id]?.isCompleted).length;
-    
+
     // Calculate streak from activity history
     const streak = calculateStreak(userProgress.activity);
 
@@ -200,15 +216,15 @@ export default function Dashboard() {
     const dates = [...new Set(activity.map(a => a.timestamp))].sort().reverse();
     let streak = 0;
     let today = new Date().toISOString().split('T')[0];
-    
+
     // Check if active today or yesterday
     if (dates[0] !== today && dates[0] !== getYesterday()) return 0;
 
     for (let i = 0; i < dates.length; i++) {
-        if (i === 0) { streak++; continue; }
-        const diff = (new Date(dates[i-1]) - new Date(dates[i])) / (1000 * 60 * 60 * 24);
-        if (diff === 1) streak++;
-        else break;
+      if (i === 0) { streak++; continue; }
+      const diff = (new Date(dates[i - 1]) - new Date(dates[i])) / (1000 * 60 * 60 * 24);
+      if (diff === 1) streak++;
+      else break;
     }
     return streak;
   }, [getYesterday]);
@@ -216,7 +232,7 @@ export default function Dashboard() {
   // The "ONE TASK" selector logic
   const getHeroTask = () => {
     if (!roadmap) return null;
-    
+
     for (const phase of roadmap.phases) {
       for (const task of phase.tasks) {
         if (!userProgress.tasks[task.id]?.isCompleted && checkPrerequisites(task.prerequisites)) {
@@ -229,14 +245,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!userProgress.activity) return;
-    
+
     // Behavior Signal Calculation Logic
     const calculateSignals = () => {
       const recent = userProgress.activity.slice(-5);
       if (recent.length === 0) return;
 
       let signals = { ...behaviorSignals };
-      
+
       // 1. Pace Signal
       const totalTime = recent.reduce((sum, a) => sum + (a.timeSpent || 0), 0);
       const avgTime = totalTime / recent.length;
@@ -277,28 +293,28 @@ export default function Dashboard() {
           <div className="loader-ring"></div>
           <Zap className="loader-icon" size={32} />
         </div>
-        
+
         <div className="loading-content text-center mt-8">
           <h2 className="text-2xl font-bold mb-2 tracking-tight">Optimizing Learning Path</h2>
           <p className="text-muted mb-6">Initialized: <span className="text-accent font-medium">{loadingDetails.module}</span></p>
-          
+
           <div className="loading-progress-container">
             <div className="loading-progress-bar">
-              <div 
-                className="loading-progress-fill" 
+              <div
+                className="loading-progress-fill"
                 style={{ width: `${progressPercent}%` }}
               ></div>
             </div>
             <div className="loading-progress-stats">
-               <span>Step {loadingDetails.progress} of {loadingDetails.total}</span>
-               <span>{progressPercent}%</span>
+              <span>Step {loadingDetails.progress} of {loadingDetails.total}</span>
+              <span>{progressPercent}%</span>
             </div>
           </div>
         </div>
 
         <div className="loading-foot-meta mt-12 text-sm text-dim">
-           <Loader2 className="spinner inline mr-2" size={14} /> 
-           Building a data-driven curriculum...
+          <Loader2 className="spinner inline mr-2" size={14} />
+          Building a data-driven curriculum...
         </div>
       </div>
     );
@@ -312,14 +328,14 @@ export default function Dashboard() {
         <h2 className="text-danger mb-4">Connection Notice</h2>
         <p className="text-muted mb-6 text-center" style={{ maxWidth: '400px' }}>{error}</p>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={() => window.location.reload()}
           >
             Retry Connection
           </button>
-          <button 
-            className="btn btn-outline" 
+          <button
+            className="btn btn-outline"
             onClick={navigateToProfiler}
           >
             Return to Profiler
@@ -334,7 +350,7 @@ export default function Dashboard() {
     if (!user) return;
 
     const isCompleted = !userProgress.tasks[taskId]?.isCompleted;
-    
+
     // Optimistic Update
     const newProgress = {
       ...userProgress,
@@ -342,31 +358,31 @@ export default function Dashboard() {
         ...userProgress.tasks,
         [taskId]: { isCompleted, timeSpent: sessionTime }
       },
-      activity: [...userProgress.activity, { 
-        taskId, 
-        status: isCompleted ? 'completed' : 'partial', 
+      activity: [...userProgress.activity, {
+        taskId,
+        status: isCompleted ? 'completed' : 'partial',
         timeSpent: sessionTime,
         timestamp: new Date().toISOString().split('T')[0]
       }]
     };
     setUserProgress(newProgress);
-    
+
     // Cloud Sync
     await dbService.updateTaskProgress(user.uid, taskId, isCompleted, { timeSpent: sessionTime });
-    
+
     // Logic for checkpoints
     const completedInPhase = phase.tasks.filter(t => (t.id === taskId ? isCompleted : userProgress.tasks[t.id]?.isCompleted)).length;
     if (completedInPhase === Math.floor(phase.tasks.length / 2) && isCompleted) {
-        setTimeout(() => {
-          navigate('/interviewer', { state: { ...state, milestone: phase.checkpoint, role: roadmap.role || state?.role }});
-        }, 1000);
+      setTimeout(() => {
+        navigate('/interviewer', { state: { ...state, milestone: phase.checkpoint, role: roadmap.role || state?.role } });
+      }, 1000);
     }
   };
 
   return (
     <div className="dashboard-container main-content animate-fade-in">
-      <PerformanceDashboard 
-        stats={calculateOverallStats()} 
+      <PerformanceDashboard
+        stats={calculateOverallStats()}
         behaviorSignals={behaviorSignals}
         activityHistory={userProgress.activity}
         timeConstraint={roadmap?.timeConstraint || state?.timeConstraint}
@@ -374,12 +390,23 @@ export default function Dashboard() {
 
       <div className="hero-task-section">
         <div className="section-header">
-           <h2 className="section-title">TODAY'S FOCUS</h2>
-           <span className="text-muted text-sm">One task. Full mastery.</span>
+          <h2 className="section-title">TODAY'S FOCUS</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-muted text-sm">One task. Full mastery.</span>
+            {roadmap?.generationMethod && (
+              <span className={`text-xs px-2 py-1 rounded-full ${
+                roadmap.generationMethod === 'ai' 
+                  ? 'bg-accent/20 text-accent border border-accent/30' 
+                  : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+              }`}>
+                {roadmap.generationMethod === 'ai' ? '🤖 AI Generated' : '📚 Fallback Data'}
+              </span>
+            )}
+          </div>
         </div>
-        
+
         {getHeroTask() ? (
-          <TaskExecutionCard 
+          <TaskExecutionCard
             task={getHeroTask().task}
             isLocked={false}
             isCompleted={userProgress.tasks[getHeroTask().task.id]?.isCompleted}
@@ -387,129 +414,135 @@ export default function Dashboard() {
           />
         ) : (
           <div className="glass-panel p-8 text-center animate-fade-in">
-             <Zap color="var(--accent)" size={32} className="mx-auto mb-4" />
-             <h3>All Targeted Tasks Complete!</h3>
-             <p className="text-muted">You've mastered today's objectives. Check the full roadmap for what's next.</p>
+            <Zap color="var(--accent)" size={32} className="mx-auto mb-4" />
+            <h3>All Targeted Tasks Complete!</h3>
+            <p className="text-muted">You've mastered today's objectives. Check the full roadmap for what's next.</p>
           </div>
         )}
       </div>
 
       <div className="curriculum-toggle">
-         <button className="btn-text" onClick={() => setShowFullRoadmap(!showFullRoadmap)}>
-            {showFullRoadmap ? "Collapse Roadmap" : "View Full Course Curriculum"}
-            {showFullRoadmap ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-         </button>
+        <button className="btn-text" onClick={() => setShowFullRoadmap(!showFullRoadmap)}>
+          {showFullRoadmap ? "Hide Full Course Curriculum" : "View Full Course Curriculum"}
+          {showFullRoadmap ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
       </div>
 
       {/* LAYER 1: DAILY CORE */}
-      <DSAProblemCard 
-        initialData={dailyData.dsa} 
-        role={state?.role || roadmap?.role} 
-        completedTopics={Object.keys(userProgress.tasks)} 
+      <DSAProblemCard
+        data={dailyData.dsa}
+        role={state?.role || roadmap?.role}
+        completedTopics={Object.keys(userProgress.tasks)}
       />
-      <ProjectSuggestionCard 
-        initialData={dailyData.projects} 
-        stack={state?.stack || roadmap?.stack} 
-        completedPhases={roadmap?.phases?.length || 0} 
+      <ProjectSuggestionCard
+        data={dailyData.projects}
+        stack={state?.stack || roadmap?.stack}
+        completedPhases={roadmap?.phases?.length || 0}
       />
-      <RevisionCard 
-        initialData={dailyData.revision} 
-        completedTopics={Object.keys(userProgress.tasks)} 
+      <RevisionCard
+        data={dailyData.revision}
+        completedTopics={Object.keys(userProgress.tasks)}
       />
 
       {/* LAYER 2: WEEKLY GROWTH */}
-      <VisibilityCard 
-        initialData={dailyData.visibility}
+      <VisibilityCard
+        data={dailyData.visibility}
         completedTasks={Object.entries(userProgress.tasks)
           .filter(([, t]) => t.isCompleted)
-          .map(([id]) => id)} 
-        role={roadmap?.role || state?.role || 'Developer'} 
+          .map(([id]) => id)}
+        role={roadmap?.role || state?.role || 'Developer'}
       />
-      <SystemDesignCard 
-        initialData={dailyData.systemDesign} 
-        role={roadmap?.role || state?.role} 
-        completedPhases={roadmap?.phases?.length || 0} 
-        stack={roadmap?.stack || state?.stack} 
+      <SystemDesignCard
+        data={dailyData.systemDesign}
+        role={roadmap?.role || state?.role}
+        completedPhases={roadmap?.phases?.length || 0}
+        stack={roadmap?.stack || state?.stack}
       />
 
       {/* LAYER 3: STRATEGIC AWARENESS */}
-      <TechAwarenessCard 
-        initialData={dailyData.techAwareness} 
-        role={roadmap?.role || state?.role} 
-        stack={roadmap?.stack || state?.stack} 
+      <TechAwarenessCard
+        data={dailyData.techAwareness}
+        role={roadmap?.role || state?.role}
+        stack={roadmap?.stack || state?.stack}
       />
-      <CareerAwarenessCard 
-        initialData={dailyData.career} 
-        currentRole={state?.role || roadmap?.role || 'Full Stack Developer'} 
+      <CareerAwarenessCard
+        data={dailyData.career}
+        currentRole={state?.role || roadmap?.role || 'Full Stack Developer'}
       />
 
       {showFullRoadmap && (
         <div className="roadmap-grid animate-slide-up">
-        {roadmap?.phases?.map((phase, pIdx) => (
-          <div key={pIdx} className={`phase-block ${expandedPhase === pIdx ? 'phase-expanded' : ''}`}>
-            <div className="phase-header" onClick={() => setExpandedPhase(expandedPhase === pIdx ? -1 : pIdx)} style={{ cursor: 'pointer' }}>
-               <div className="phase-info">
-                  {expandedPhase === pIdx ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                  <h3 className="phase-title">{phase.name}</h3>
-                  <div className="phase-badge">Phase {pIdx + 1}</div>
-               </div>
-               <div className="phase-stats">
-                  <span>{calculatePhaseProgress(phase.tasks)}% Complete</span>
-                  <div className="progress-bar-mini">
-                    <div 
-                      className="progress-fill" 
-                      style={{ width: `${calculatePhaseProgress(phase.tasks)}%` }}
-                    />
+          {roadmap?.phases?.map((phase, pIdx) => {
+            const isPhaseAccessible = pIdx === 0 || (roadmap.phases[pIdx - 1]?.tasks?.every(task => userProgress.tasks[task.id]?.isCompleted) ?? true);
+            const isPhaseExpanded = expandedPhase === pIdx;
+
+            return (
+              <div key={pIdx} className={`phase-block ${isPhaseExpanded ? 'phase-expanded' : ''} ${!isPhaseAccessible ? 'phase-locked' : ''}`}>
+                <div className="phase-header" onClick={() => setExpandedPhase(expandedPhase === pIdx ? -1 : pIdx)} style={{ cursor: 'pointer' }}>
+                  <div className="phase-info">
+                    {isPhaseExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    <h3 className="phase-title">{phase.name}</h3>
+                    <div className="phase-badge">Phase {pIdx + 1}</div>
+                    {!isPhaseAccessible && <Lock size={16} className="phase-lock-icon" />}
                   </div>
-               </div>
-            </div>
-            
-            {expandedPhase === pIdx && (
-              <div className="phase-content animate-slide-up">
-                <div className="concept-tags">
-                  {phase.concepts?.map((c, i) => (
-                     <span key={i} className="badge-outline">{c}</span>
-                  ))}
+                  <div className="phase-stats">
+                    <span>{calculatePhaseProgress(phase.tasks)}% Complete</span>
+                    <div className="progress-bar-mini">
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${calculatePhaseProgress(phase.tasks)}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="task-list">
-                  {phase.tasks?.map((task) => (
-                    <TaskExecutionCard 
-                      key={task.id}
-                      task={task}
-                      isLocked={!checkPrerequisites(task.prerequisites)}
-                      isCompleted={userProgress.tasks[task.id]?.isCompleted}
-                      prerequisites={task.prerequisites}
-                      onToggle={() => toggleTask(task.id, phase)}
-                    />
-                  ))}
-                </div>
-                
-                {phase.project && (
-                   <div className={`project-lock-card glass-panel ${!checkPrerequisites(phase.project.lockedUntil) ? 'locked' : ''}`}>
-                     <div className="project-body">
-                        <Zap size={20} className="icon-glow" />
-                        <div className="project-info">
-                           <h4>Capstone: {phase.project.title}</h4>
-                           <p className="text-sm text-muted">{phase.project.objective}</p>
+                {isPhaseExpanded && (
+                  <div className="phase-content animate-slide-up">
+                    <div className="concept-tags">
+                      {phase.concepts?.map((c, i) => (
+                        <span key={i} className="badge-outline">{c}</span>
+                      ))}
+                    </div>
+
+                    <div className="task-list">
+                      {phase.tasks?.map((task) => (
+                        <TaskExecutionCard
+                          key={task.id}
+                          task={task}
+                          isLocked={!checkPrerequisites(task.prerequisites)}
+                          isCompleted={userProgress.tasks[task.id]?.isCompleted}
+                          prerequisites={task.prerequisites}
+                          onToggle={() => toggleTask(task.id, phase)}
+                        />
+                      ))}
+                    </div>
+
+                    {phase.project && (
+                      <div className={`project-lock-card glass-panel ${!checkPrerequisites(phase.project.lockedUntil) ? 'locked' : ''}`}>
+                        <div className="project-body">
+                          <Zap size={20} className="icon-glow" />
+                          <div className="project-info">
+                            <h4>Capstone: {phase.project.title}</h4>
+                            <p className="text-sm text-muted">{phase.project.objective}</p>
+                          </div>
                         </div>
-                     </div>
-                     {!checkPrerequisites(phase.project.lockedUntil) && (
-                        <div className="lock-tag"><Lock size={12} /> Master tasks to unlock</div>
-                     )}
-                   </div>
-                )}
+                        {!checkPrerequisites(phase.project.lockedUntil) && (
+                          <div className="lock-tag"><Lock size={12} /> Master tasks to unlock</div>
+                        )}
+                      </div>
+                    )}
 
-                <div className="checkpoint-divider">
-                   <div className="line"></div>
-                   <span className="checkpoint-text">Checkpoint: {phase.checkpoint}</span>
-                   <div className="line"></div>
-                </div>
+                    <div className="checkpoint-divider">
+                      <div className="line"></div>
+                      <span className="checkpoint-text">Checkpoint: {phase.checkpoint}</span>
+                      <div className="line"></div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

@@ -80,18 +80,23 @@ export default function StackSelection() {
   return (
     <div className="stack-container main-content animate-fade-in">
       <div className="glass-panel form-card text-center">
-        <Cpu size={48} className="icon-pulse mb-4" color="var(--primary)" />
-        <h2>Stack Intelligence</h2>
-        <p className="text-muted mb-6">AI recommends the following stacks for {profile.role}</p>
+        <div className="flex justify-center mb-6">
+          <div className="status-icon-glow">
+            <Cpu size={32} className="text-primary" />
+          </div>
+        </div>
+        
+        <h2 className="text-3xl font-bold mb-2 tracking-tight">Stack Intelligence</h2>
+        <p className="text-secondary mb-8">RoleForge AI recommends the optimum tech stacks for <span className="text-accent font-bold">{profile.role}</span></p>
 
         {loading ? (
           <div className="loading-state">
-            <Loader2 className="spinner" size={32} />
-            <p>Analyzing optimum technologies...</p>
+            <Loader2 className="spinner" size={40} />
+            <p className="text-muted tracking-wide uppercase text-xs font-bold">Analyzing market-ready technologies...</p>
           </div>
         ) : error ? (
-          <div className="error-state mb-4">
-            <p className="text-danger mb-4">{error}</p>
+          <div className="error-state mb-4 p-6 bg-danger/10 rounded-xl border border-danger/20">
+            <p className="text-danger mb-4 font-medium">{error}</p>
             <button className="btn btn-outline" onClick={() => window.location.reload()}>Retry Analysis</button>
           </div>
         ) : (
@@ -103,7 +108,10 @@ export default function StackSelection() {
                 style={{ animationDelay: `${idx * 0.1}s` }}
                 onClick={() => setSelectedStack(stack)}
               >
-                <h3>{stack}</h3>
+                <div className="flex items-center justify-between">
+                   <h3 className="m-0">{stack}</h3>
+                   {selectedStack === stack && <ArrowRight size={18} className="text-primary" />}
+                </div>
               </div>
             ))}
           </div>
@@ -111,11 +119,11 @@ export default function StackSelection() {
 
         <button 
           onClick={handleProceed}
-          className="btn btn-primary full-width mt-6" 
+          className="btn btn-primary full-width mt-10 py-4 text-lg" 
           disabled={loading || !selectedStack || saving}
         >
           {saving ? <Loader2 className="spinner" /> : (
-            <>Generate Roadmap <ArrowRight size={18} /></>
+            <>Finalize & Generate Roadmap <ArrowRight size={20} /></>
           )}
         </button>
       </div>

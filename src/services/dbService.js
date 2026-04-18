@@ -1,18 +1,36 @@
 import { db } from './firebase';
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  serverTimestamp
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+  orderBy
 } from 'firebase/firestore';
 
 export const dbService = {
-  // Save or Update Active Roadmap
+  // --- ROADMAP ENGINE (Multi-Course Support) ---
+
   saveRoadmap: async (userId, roadmapData, metadata) => {
     try {
-      const roadmapRef = doc(db, 'Roadmaps', userId);
-      await setDoc(roadmapRef, {
+      // 1. Mark existing roadmaps as inactive
+      const q = query(collection(db, 'Roadmaps'), where('userId', '==', userId), where('isActive', '==', true));
+      const snapshots = await getDocs(q);
+      const batch = [];
+      snapshots.forEach(child => {
+        batch.push(updateDoc(doc(db, 'Roadmaps', child.id), { isActive: false }));
+      });
+      await Promise.all(batch);
+
+      // 2. Create new active roadmap with unique ID
+      const newRoadmapRef = doc(collection(db, 'Roadmaps'));
+      await setDoc(newRoadmapRef, {
+        id: newRoadmapRef.id,
         userId,
         phases: roadmapData.phases,
         role: metadata.role,
@@ -22,20 +40,19 @@ export const dbService = {
         updatedAt: serverTimestamp(),
         isActive: true
       });
-      return true;
+      return newRoadmapRef.id;
     } catch (err) {
       console.error("Error saving roadmap:", err);
-      return false;
+      return null;
     }
   },
 
-  // Get Active Roadmap
   getActiveRoadmap: async (userId) => {
     try {
-      const roadmapRef = doc(db, 'Roadmaps', userId);
-      const docSnap = await getDoc(roadmapRef);
-      if (docSnap.exists()) {
-        return docSnap.data();
+      const q = query(collection(db, 'Roadmaps'), where('userId', '==', userId), where('isActive', '==', true));
+      const snapshots = await getDocs(q);
+      if (!snapshots.empty) {
+        return snapshots.docs[0].data();
       }
       return null;
     } catch (err) {
@@ -44,168 +61,202 @@ export const dbService = {
     }
   },
 
-  // Update Task Progress with Behavior Metadata
+  listUserRoadmaps: async (userId) => {
+    try {
+      const q = query(
+        collection(db, 'Roadmaps'),
+        where('userId', '==', userId)
+      );
+      const snapshots = await getDocs(q);
+      // Sort by updatedAt in memory since orderBy might require composite index
+      const roadmaps = snapshots.docs.map(d => d.data());
+      return roadmaps.sort((a, b) => {
+        if (!a.updatedAt || !b.updatedAt) return 0;
+        return b.updatedAt.toMillis() - a.updatedAt.toMillis();
+      });
+    } catch (err) {
+      console.error("Error listing roadmaps:", err);
+      return [];
+    }
+  },
+
+  deleteRoadmap: async (userId, roadmapId) => {
+    try {
+      await deleteDoc(doc(db, 'Roadmaps', roadmapId));
+      // Also clear progress/grind locally if it was the active one
+      // (This is handled by UI redirects usually)
+      return true;
+    } catch (err) {
+      console.error("Error deleting roadmap:", err);
+      return false;
+    }
+  },
+
+  // --- PROGRESS & ACTIVITY ---
+
   updateTaskProgress: async (userId, taskId, isCompleted, behaviorData = {}) => {
     try {
+      // Progress is still keyed by userId for now for simplicity, 
+      // but in a full multi-course app, it should be keyed by roadmapId
       const progressRef = doc(db, 'Progress', userId);
       const docSnap = await getDoc(progressRef);
-      
+
       const newAction = {
         taskId,
         status: isCompleted ? 'completed' : 'partial',
         timeSpent: behaviorData.timeSpent || 0,
-        timestamp: new Date().toISOString().split('T')[0] // Calendar date YYYY-MM-DD
+        timestamp: new Date().toISOString().split('T')[0]
       };
 
       if (!docSnap.exists()) {
         await setDoc(progressRef, {
           userId,
-          tasks: { 
-            [taskId]: { 
-              isCompleted, 
-              ...behaviorData,
-              lastUpdated: serverTimestamp() 
-            } 
-          },
+          tasks: { [taskId]: { isCompleted, ...behaviorData, lastUpdated: serverTimestamp() } },
           activity: [newAction],
           lastUpdated: serverTimestamp()
         });
       } else {
         const currentData = docSnap.data();
         const updatedActivity = [...(currentData.activity || []), newAction];
-        
         await updateDoc(progressRef, {
-          [`tasks.${taskId}`]: { 
-            isCompleted, 
-            ...behaviorData, 
-            lastUpdated: serverTimestamp() 
-          },
+          [`tasks.${taskId}`]: { isCompleted, ...behaviorData, lastUpdated: serverTimestamp() },
           activity: updatedActivity,
           lastUpdated: serverTimestamp()
         });
       }
       return true;
     } catch (err) {
-      console.error("Error updating progress:", err);
       return false;
     }
   },
 
-  // Get User Progress (Tasks + Activity History)
   getUserProgress: async (userId) => {
     try {
       const progressRef = doc(db, 'Progress', userId);
       const docSnap = await getDoc(progressRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
-        return {
-          tasks: data.tasks || {},
-          activity: data.activity || []
-        };
+        return { tasks: data.tasks || {}, activity: data.activity || [] };
       }
       return { tasks: {}, activity: [] };
     } catch (err) {
-      console.error("Error fetching progress:", err);
       return { tasks: {}, activity: [] };
     }
   },
 
-  // Save Stats (Streaks, Skill Score)
-  updateUserStats: async (userId, stats) => {
+  // --- ACCOUNT MANAGEMENT ---
+
+  resetUserData: async (userId) => {
     try {
-      const userRef = doc(db, 'Users', userId);
-      await setDoc(userRef, {
-        stats,
-        lastActive: serverTimestamp()
-      }, { merge: true });
+      // Nukes progress and active plans to allow a completely fresh start
+      const refs = [
+        doc(db, 'Progress', userId),
+        doc(db, 'DailyCache', userId),
+        doc(db, 'GrindStates', userId),
+        doc(db, 'GrindPlans', userId)
+      ];
+      await Promise.all(refs.map(r => deleteDoc(r)));
       return true;
     } catch (err) {
-      console.error("Error updating stats:", err);
+      console.error("Error resetting data:", err);
       return false;
     }
   },
 
-  // Get User Stats
-  getUserStats: async (userId) => {
+  nukeEverything: async (userId) => {
     try {
-      const userRef = doc(db, 'Users', userId);
-      const docSnap = await getDoc(userRef);
-      if (docSnap.exists()) {
-        return docSnap.data().stats;
-      }
-      return null;
-    } catch (err) {
-      console.error("Error fetching user stats:", err);
-      return null;
-    }
-  },
+      // 1. Fetch all roadmaps for this user
+      const q = query(collection(db, 'Roadmaps'), where('userId', '==', userId));
+      const snapshots = await getDocs(q);
 
-  // Get User Profile (Draft info)
-  getUserProfile: async (userId) => {
-    try {
-      const userRef = doc(db, 'Users', userId);
-      const docSnap = await getDoc(userRef);
-      if (docSnap.exists()) {
-        return docSnap.data().profile;
-      }
-      return null;
-    } catch (err) {
-      console.error("Error fetching user profile:", err);
-      return null;
-    }
-  },
+      const deletions = [];
+      snapshots.forEach(roadmapDoc => {
+        deletions.push(deleteDoc(doc(db, 'Roadmaps', roadmapDoc.id)));
+      });
 
-  // Save/Update User Profile (Draft info like Role, Stack, etc)
-  saveUserProfile: async (userId, profileData) => {
-    try {
-      const userRef = doc(db, 'Users', userId);
-      await setDoc(userRef, {
-        profile: profileData,
-        lastUpdated: serverTimestamp()
-      }, { merge: true });
+      // 2. Clear all other keyed documents
+      deletions.push(
+        deleteDoc(doc(db, 'Progress', userId)),
+        deleteDoc(doc(db, 'DailyCache', userId)),
+        deleteDoc(doc(db, 'GrindStates', userId)),
+        deleteDoc(doc(db, 'GrindPlans', userId)),
+        deleteDoc(doc(db, 'Users', userId))
+      );
+
+      await Promise.all(deletions);
       return true;
     } catch (err) {
-      console.error("Error saving user profile:", err);
+      console.error("Nuclear reset failed:", err);
       return false;
     }
   },
 
-  // Daily Cache Management
+  // --- CACHE & GRIND ---
+
   getDailyCache: async (userId) => {
     try {
       const cacheRef = doc(db, 'DailyCache', userId);
       const docSnap = await getDoc(cacheRef);
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Return null if data is stale (from a previous day)
-        if (data.lastUpdated !== today) {
-          return null;
-        }
-        return data.cache;
+        return data.lastUpdated === new Date().toISOString().split('T')[0] ? data.cache : null;
       }
       return null;
-    } catch (err) {
-      console.error("Error fetching daily cache:", err);
-      return null;
-    }
+    } catch (err) { return null; }
   },
 
   updateDailyCache: async (userId, cacheData) => {
     try {
       const cacheRef = doc(db, 'DailyCache', userId);
-      const today = new Date().toISOString().split('T')[0];
       await setDoc(cacheRef, {
         userId,
         cache: cacheData,
-        lastUpdated: today,
+        lastUpdated: new Date().toISOString().split('T')[0],
         timestamp: serverTimestamp()
       });
       return true;
-    } catch (err) {
-      console.error("Error updating daily cache:", err);
-      return false;
-    }
+    } catch (err) { return false; }
+  },
+
+  saveGrindPlan: async (userId, plan) => {
+    try {
+      await setDoc(doc(db, 'GrindPlans', userId), { userId, plan, updatedAt: serverTimestamp() });
+      return true;
+    } catch (err) { return false; }
+  },
+
+  getGrindPlan: async (userId) => {
+    try {
+      const snap = await getDoc(doc(db, 'GrindPlans', userId));
+      return snap.exists() ? snap.data().plan : null;
+    } catch (err) { return null; }
+  },
+
+  saveGrindState: async (userId, state) => {
+    try {
+      await setDoc(doc(db, 'GrindStates', userId), { userId, ...state, lastUpdated: serverTimestamp() }, { merge: true });
+      return true;
+    } catch (err) { return false; }
+  },
+
+  getGrindState: async (userId) => {
+    try {
+      const snap = await getDoc(doc(db, 'GrindStates', userId));
+      return snap.exists() ? snap.data() : { currentDay: 0, lastCommitDate: null, streak: 0 };
+    } catch (err) { return { currentDay: 0, lastCommitDate: null, streak: 0 }; }
+  },
+
+  getUserProfile: async (userId) => {
+    try {
+      const snap = await getDoc(doc(db, 'Users', userId));
+      return snap.exists() ? snap.data().profile : null;
+    } catch (err) { return null; }
+  },
+
+  saveUserProfile: async (userId, profileData) => {
+    try {
+      await setDoc(doc(db, 'Users', userId), { profile: profileData, lastUpdated: serverTimestamp() }, { merge: true });
+      return true;
+    } catch (err) { return false; }
   }
 };

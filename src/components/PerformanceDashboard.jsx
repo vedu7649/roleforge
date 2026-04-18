@@ -74,14 +74,25 @@ export default function PerformanceDashboard({ stats, behaviorSignals, activityH
           </div>
         </div>
         <div className="quick-stats">
-           <div className="q-stat">
+          <div className="hero-stat-card glass-panel">
+            <div className="stat-icon-mini completion">
+              <CheckCircle2 size={16} />
+            </div>
+            <div className="q-stat">
               <span className="q-label">COMPLETION</span>
               <span className="q-value">{stats.completion}%</span>
-           </div>
-           <div className="q-stat">
+            </div>
+          </div>
+
+          <div className="hero-stat-card glass-panel">
+            <div className="stat-icon-mini streak">
+              <Zap size={16} />
+            </div>
+            <div className="q-stat">
               <span className="q-label">STREAK</span>
               <span className="q-value">{stats.streak}d</span>
-           </div>
+            </div>
+          </div>
         </div>
       </div>
 

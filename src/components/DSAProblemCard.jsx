@@ -1,235 +1,103 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Code2, ExternalLink, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
-import { aiService } from '../services/aiService';
+import React from 'react';
+import { Code2, ExternalLink, ShieldCheck } from 'lucide-react';
 
-export default function DSAProblemCard({ 
-  initialData = null, 
-  role = 'Developer', 
-  completedTopics = [],
-  isActive = true,
-  onLoadComplete = () => {}
-}) {
-  const [history, setHistory] = useState(initialData ? [initialData] : []);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const hasSignaledLoad = React.useRef(false);
-
-  const problems = history[currentIndex] || [];
-
-  const platformColors = {
-    leetcode: '#FFB800',
-    codechef: '#3776AB',
-    codeforces: '#1F1C3F'
-  };
-
-  const [refreshCooldown, setRefreshCooldown] = useState(0);
-
-  // Timer for cooldown
-  useEffect(() => {
-    let timer;
-    if (refreshCooldown > 0) {
-      timer = setInterval(() => {
-        setRefreshCooldown(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [refreshCooldown]);
-
-  const refreshProblems = useCallback(async () => {
-    if (refreshCooldown > 0) return;
-    setIsGenerating(true);
-    try {
-      const avoidList = history.map(batch => batch.map(p => p.title)).flat();
-      const newProblems = await aiService.generateDSAProblems(role, completedTopics, avoidList);
-      
-      setHistory(prev => {
-        const lastBatch = prev[prev.length - 1];
-        const isDuplicate = lastBatch && newProblems && 
-                           lastBatch[0]?.title === newProblems[0]?.title;
-
-        if (isDuplicate) {
-          console.warn("AI returned duplicate data, applying short 5s retry cooldown.");
-          setRefreshCooldown(5); // Only 5 seconds wait for duplicates
-          return prev;
-        }
-
-        const newHistory = [...prev, newProblems];
-        setCurrentIndex(newHistory.length - 1);
-        setRefreshCooldown(60); // Full 60s wait for successful new data
-        return newHistory;
-      });
-    } catch (error) {
-      console.error('Error refreshing DSA problems:', error);
-      setRefreshCooldown(5); // 5s wait on total failure
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [completedTopics, role, history, refreshCooldown]);
-
-  // Load initial data ONLY on first activation
-  useEffect(() => {
-    if (history.length > 0) {
-      if (isActive && !hasSignaledLoad.current) {
-        hasSignaledLoad.current = true;
-        onLoadComplete();
-      }
-      return;
-    }
-
-    if (!isActive) return;
-
-    const loadProblems = async () => {
-      setIsGenerating(true);
-      try {
-        const initialProblems = await aiService.generateDSAProblems(role, completedTopics, []);
-        setHistory([initialProblems]);
-        setCurrentIndex(0);
-      } catch (error) {
-        console.error('Error loading DSA problems:', error);
-      } finally {
-        setIsGenerating(false);
-        if (!hasSignaledLoad.current) {
-          hasSignaledLoad.current = true;
-          onLoadComplete();
-        }
-      }
-    };
-    loadProblems();
-  }, [role, completedTopics, isActive, onLoadComplete, history.length]);
-
-  const goPrev = () => setCurrentIndex(p => Math.max(0, p - 1));
-  const goNext = () => setCurrentIndex(p => Math.min(history.length - 1, p + 1));
+export default function DSAProblemCard({ data, isLocked }) {
+  if (!data || data.length === 0) return null;
 
   return (
-    <div className="dashboard-card animate-fade-in" style={{ marginTop: '1.5rem' }}>
+    <div className="dashboard-card animate-fade-in" style={{ opacity: isLocked ? 0.6 : 1 }}>
       <div className="card-header card-header-flex">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Code2 size={24} color="var(--primary)" />
           <div>
             <h3>Daily DSA Practice</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              {isGenerating ? 'Wait...' : `History: ${currentIndex + 1} / ${history.length}`}
-            </div>
+            <p className="text-xs text-muted">Pick one to solve for today's streak</p>
           </div>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {history.length > 1 && (
-            <div className="history-controls" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-hover)', borderRadius: '8px', padding: '2px' }}>
-              <button 
-                className="btn-icon btn-xs" 
-                onClick={goPrev} 
-                disabled={currentIndex === 0 || loading || isGenerating}
-                style={{ padding: '4px' }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0 8px', minWidth: '40px', textAlign: 'center' }}>
-                {currentIndex + 1}
-              </span>
-              <button 
-                className="btn-icon btn-xs" 
-                onClick={goNext} 
-                disabled={currentIndex === history.length - 1 || loading || isGenerating}
-                style={{ padding: '4px' }}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
-          
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={refreshProblems}
-            disabled={loading || isGenerating || refreshCooldown > 0}
-            style={{ gap: '0.5rem', minWidth: '120px' }}
-          >
-            <RefreshCw size={16} style={{ animation: (loading || isGenerating) ? 'spin 1s linear infinite' : 'none' }} />
-            {isGenerating ? 'Wait...' : refreshCooldown > 0 ? `Wait ${refreshCooldown}s` : 'New Problems'}
-          </button>
-        </div>
-      </div>
-
-      {(loading || isGenerating) ? (
-        <div style={{ marginTop: '2rem', textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>
-          ✨ AI is generating personalized DSA problems...
-        </div>
-      ) : (
-        <div className="card-grid-2" style={{ marginTop: '1rem' }}>
-        {problems && Array.isArray(problems) ? problems.map((problem, idx) => (
-          <a
-            key={`${currentIndex}-${idx}`}
-            href={problem.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ textDecoration: 'none' }}
-          >
-            <div
-              style={{
-                padding: '1rem',
-                border: `1px solid rgba(15, 23, 42, 0.08)`,
-                borderRadius: '0.75rem',
-                background: 'var(--bg-card)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                hover: { transform: 'translateY(-2px)' }
-              }}
-              className="problem-card"
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <span
-                  style={{
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    color: 'white',
-                    background: platformColors[problem.platform] || 'var(--primary)',
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '9999px',
-                    textTransform: 'uppercase'
-                  }}
-                >
-                  {problem.platform}
-                </span>
-                <span
-                  style={{
-                    fontSize: '0.65rem',
-                    fontWeight: 600,
-                    padding: '0.2rem 0.6rem',
-                    borderRadius: '4px',
-                    background:
-                      problem.difficulty === 'easy'
-                        ? 'rgba(16, 185, 129, 0.1)'
-                        : problem.difficulty === 'medium'
-                        ? 'rgba(245, 158, 11, 0.1)'
-                        : 'rgba(239, 68, 68, 0.1)',
-                    color:
-                      problem.difficulty === 'easy'
-                        ? '#10b981'
-                        : problem.difficulty === 'medium'
-                        ? '#f59e0b'
-                        : '#ef4444'
-                  }}
-                >
-                  {problem.difficulty ? problem.difficulty.toUpperCase() : 'MEDIUM'}
-                </span>
-              </div>
-              <h4 style={{ margin: '0.5rem 0 0 0', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {problem.title || 'Coding Challenge'}
-              </h4>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', color: 'var(--primary)', fontSize: '0.8rem' }}>
-                Solve <ExternalLink size={14} />
-              </div>
-            </div>
-          </a>
-        )) : (
-          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No problems found. Refresh to try again.
+        {isLocked && (
+          <div className="lock-indicator">
+            <ShieldCheck size={16} /> <span>Locked</span>
           </div>
         )}
-        </div>
-      )}
+      </div>
+
+      <div className="card-grid-2" style={{ marginTop: '1.5rem' }}>
+        {data.map((problem, idx) => (
+          <div key={idx} className="dsa-option-box glass-panel p-4">
+            <div className="option-label">Option {idx + 1}</div>
+            <h4 className="mb-2">{problem.title}</h4>
+            <div className="flex items-center gap-2 mb-4" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              <span className={`badge badge-${problem.difficulty?.toLowerCase()}`} style={{
+                background: problem.difficulty?.toLowerCase() === 'easy' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                color: problem.difficulty?.toLowerCase() === 'easy' ? '#10b981' : '#f59e0b',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '0.7rem',
+                fontWeight: 700
+              }}>
+                {problem.difficulty}
+              </span>
+              <span className="text-xs text-muted" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{problem.platform}</span>
+            </div>
+            <a 
+              href={problem.link} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn btn-outline btn-sm full-width"
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              Solve <ExternalLink size={14} className="ml-1" />
+            </a>
+          </div>
+        ))}
+      </div>
+
+      <style>{`
+        .dsa-option-box {
+          position: relative;
+          transition: var(--transition);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          background: var(--bg-card);
+          padding: 1.5rem !important;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          min-height: 200px;
+          min-width: 0;
+          word-break: break-word;
+          overflow-wrap: break-word;
+          box-shadow: var(--shadow-sm);
+        }
+        .dsa-option-box:hover {
+          border-color: var(--primary);
+          transform: translateY(-5px);
+          box-shadow: var(--shadow-premium);
+        }
+        .option-label {
+          position: absolute;
+          top: -12px;
+          left: 20px;
+          background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+          color: white;
+          font-size: 0.6rem;
+          padding: 4px 12px;
+          border-radius: 99px;
+          font-weight: 800;
+          text-transform: uppercase;
+          z-index: 10;
+          box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+        }
+        .lock-indicator {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          color: var(--warning);
+          font-size: 0.8rem;
+          font-weight: 600;
+        }
+      `}</style>
     </div>
   );
 }

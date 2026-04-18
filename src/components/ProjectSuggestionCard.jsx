@@ -1,193 +1,125 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Lightbulb, Code, RefreshCw, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
-import { aiService } from '../services/aiService';
+import React from 'react';
+import { Rocket, ExternalLink, ShieldCheck, Star } from 'lucide-react';
 
-export default function ProjectSuggestionCard({ 
-  initialData = null, 
-  stack = '', 
-  completedPhases = 0, 
-  role = 'Developer',
-  isActive = true,
-  onLoadComplete = () => {}
-}) {
-  const [history, setHistory] = useState(initialData ? [initialData] : []);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const hasSignaledLoad = React.useRef(false);
-
-  const currentSuggestion = history[currentIndex] || null;
-
-  const [refreshCooldown, setRefreshCooldown] = useState(0);
-
-  // Timer for cooldown
-  useEffect(() => {
-    let timer;
-    if (refreshCooldown > 0) {
-      timer = setInterval(() => {
-        setRefreshCooldown(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [refreshCooldown]);
-
-  const refreshSuggestion = useCallback(async () => {
-    if (refreshCooldown > 0) return;
-    setIsGenerating(true);
-    try {
-      const avoidList = history.map(p => p.title);
-      const newSuggestion = await aiService.generateProjectSuggestions(stack, completedPhases, role, avoidList);
-      
-      setHistory(prev => {
-        const lastBatch = prev[prev.length - 1];
-        const isDuplicate = lastBatch && newSuggestion && lastBatch.title === newSuggestion.title;
-
-        if (isDuplicate) {
-          console.warn("AI returned duplicate data, applying short 5s retry cooldown.");
-          setRefreshCooldown(5);
-          return prev;
-        }
-
-        const newHistory = [...prev, newSuggestion];
-        setCurrentIndex(newHistory.length - 1);
-        setRefreshCooldown(60); 
-        return newHistory;
-      });
-    } catch (error) {
-      console.error('Error refreshing project suggestion:', error);
-      setRefreshCooldown(5);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [stack, completedPhases, role, history, refreshCooldown]);
-
-  // Load initial data ONLY on first activation
-  useEffect(() => {
-    if (history.length > 0) {
-      if (isActive && !hasSignaledLoad.current) {
-        hasSignaledLoad.current = true;
-        onLoadComplete();
-      }
-      return;
-    }
-
-    if (!isActive) return;
-
-    const loadProject = async () => {
-      setIsGenerating(true);
-      try {
-        const initialProject = await aiService.generateProjectSuggestions(stack, completedPhases, role, []);
-        setHistory([initialProject]);
-        setCurrentIndex(0);
-      } catch (error) {
-        console.error('Error loading project suggestion:', error);
-      } finally {
-        setIsGenerating(false);
-        if (!hasSignaledLoad.current) {
-          hasSignaledLoad.current = true;
-          onLoadComplete();
-        }
-      }
-    };
-    loadProject();
-  }, [stack, completedPhases, role, isActive, onLoadComplete, history.length]);
-
-  const goPrev = () => setCurrentIndex(p => Math.max(0, p - 1));
-  const goNext = () => setCurrentIndex(p => Math.min(history.length - 1, p + 1));
+export default function ProjectSuggestionCard({ data, isLocked }) {
+  if (!data || data.length === 0) return null;
 
   return (
-    <div className="dashboard-card project-suggestion-card animate-fade-in" style={{ marginTop: '1.5rem' }}>
+    <div className="dashboard-card animate-fade-in" style={{ opacity: isLocked ? 0.6 : 1 }}>
       <div className="card-header card-header-flex">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Lightbulb size={24} color="var(--primary)" />
+          <Rocket size={24} color="var(--primary)" />
           <div>
             <h3>Project Discovery</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              {isGenerating ? 'Wait...' : `History: ${currentIndex + 1} / ${history.length}`}
-            </div>
+            <p className="text-xs text-muted">Pick the challenge that fits your focus today</p>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {history.length > 1 && (
-            <div className="history-controls" style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-hover)', borderRadius: '8px', padding: '2px' }}>
-              <button 
-                className="btn-icon btn-xs" 
-                onClick={goPrev} 
-                disabled={currentIndex === 0 || loading || isGenerating}
-                style={{ padding: '4px' }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0 8px', minWidth: '40px', textAlign: 'center' }}>
-                {currentIndex + 1}
-              </span>
-              <button 
-                className="btn-icon btn-xs" 
-                onClick={goNext} 
-                disabled={currentIndex === history.length - 1 || loading || isGenerating}
-                style={{ padding: '4px' }}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={refreshSuggestion}
-            disabled={loading || isGenerating || refreshCooldown > 0}
-            style={{ gap: '0.5rem', minWidth: '110px' }}
-          >
-            <RefreshCw size={16} style={{ animation: (loading || isGenerating) ? 'spin 1s linear infinite' : 'none' }} />
-            {isGenerating ? 'Wait...' : refreshCooldown > 0 ? `Wait ${refreshCooldown}s` : 'New Idea'}
-          </button>
-        </div>
+        
+        {isLocked && (
+          <div className="lock-indicator">
+            <ShieldCheck size={16} /> <span>Locked</span>
+          </div>
+        )}
       </div>
 
-      {(loading || isGenerating) ? (
-        <div style={{ marginTop: '2rem', textAlign: 'center', padding: '1.5rem', color: 'var(--text-secondary)' }}>
-          ✨ AI is generating personalized project suggestions...
-        </div>
-      ) : (
-        <div className="suggestion-display animate-slide-up" style={{ marginTop: '1rem' }}>
-          <div style={{ padding: '1.5rem', background: 'rgba(var(--primary-rgb), 0.03)', borderRadius: '1rem', border: '1px solid rgba(var(--primary-rgb), 0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <span style={{ 
-                fontSize: '0.7rem', 
-                fontWeight: 700, 
-                color: 'var(--primary)', 
-                background: 'rgba(var(--primary-rgb), 0.1)', 
-                padding: '0.25rem 0.75rem', 
-                borderRadius: '9999px',
-                textTransform: 'uppercase'
-              }}>
-                {currentSuggestion?.type || 'Recommended'}
-              </span>
-            </div>
+      <div className="card-grid-2" style={{ marginTop: '1.5rem' }}>
+        {data.map((project, idx) => (
+          <div key={idx} className="project-option-box glass-panel p-5">
+            <div className="option-label">Option {idx + 1}</div>
+            <div className={`type-tag ${project.type?.toLowerCase()}`}>{project.type}</div>
+            <h4 className="mb-3 mt-2">{project.title}</h4>
+            <p className="text-sm text-muted mb-4 line-clamp-3">{project.description}</p>
             
-            <h4 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-              {currentSuggestion?.title || 'System Architect Challenge'}
-            </h4>
-            
-            <p style={{ margin: '0 0 1.5rem 0', fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {currentSuggestion?.description || 'Build a scalable application that utilizes your current tech stack effectively.'}
-            </p>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem', marginTop: '1rem' }}>
-              <span style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem', letterSpacing: '1px' }}>EXPECTED OUTCOME</span>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-                {currentSuggestion?.expectedOutcome || 'Mastery of full-stack integration and production deployment.'}
-              </p>
+            <div className="outcome-box mb-4">
+              <Star size={14} />
+              <span>{project.expectedOutcome}</span>
             </div>
 
-            <button className="btn btn-primary" style={{ marginTop: '1.5rem', width: '100%', gap: '0.5rem' }}>
-              Start Work <ArrowRight size={16} />
+            <button className="btn btn-primary btn-sm full-width" style={{ width: '100%' }}>
+              Select Project
             </button>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
+
+      <style>{`
+        .project-option-box {
+          position: relative;
+          transition: var(--transition);
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          background: var(--bg-card);
+          display: flex;
+          flex-direction: column;
+          padding: 2rem !important;
+          min-height: 420px;
+          justify-content: space-between;
+          min-width: 0;
+          overflow-wrap: break-word;
+          box-shadow: var(--shadow-sm);
+        }
+        .project-option-box:hover {
+          border-color: var(--primary);
+          transform: translateY(-8px);
+          box-shadow: var(--shadow-premium);
+        }
+        .option-label {
+          position: absolute;
+          top: -12px;
+          left: 24px;
+          background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+          color: white;
+          font-size: 0.6rem;
+          padding: 4px 14px;
+          border-radius: 99px;
+          font-weight: 800;
+          text-transform: uppercase;
+          z-index: 10;
+          box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+        }
+        .type-tag {
+          font-size: 0.65rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          width: fit-content;
+          padding: 4px 12px;
+          border-radius: 6px;
+          margin-bottom: 0.5rem;
+          letter-spacing: 0.5px;
+        }
+        .type-tag.advanced { 
+          background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.2) 100%); 
+          color: #8b5cf6; 
+          border: 1px solid rgba(139, 92, 246, 0.2);
+        }
+        .type-tag.intermediate { 
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.2) 100%); 
+          color: #3b82f6; 
+          border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        
+        .outcome-box {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          background: linear-gradient(to right, rgba(var(--primary-rgb), 0.05), transparent);
+          padding: 1rem;
+          border-radius: 12px;
+          font-size: 0.85rem;
+          color: var(--text-primary);
+          line-height: 1.5;
+          flex-grow: 1;
+          border-left: 3px solid var(--primary);
+        }
+        .outcome-box svg { flex-shrink: 0; margin-top: 2px; color: var(--warning); filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.3)); }
+
+        .line-clamp-3 {
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+      `}</style>
     </div>
   );
 }
