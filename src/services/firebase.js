@@ -17,14 +17,31 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
+// Validate critical config
+const isConfigValid = firebaseConfig.apiKey && firebaseConfig.projectId;
+
+if (!isConfigValid) {
+  console.error("⚠️ FIREBASE CONFIGURATION MISSING: Please ensure all VITE_FIREBASE_... environment variables are set in your deployment settings.");
+}
+
+// Initialize Firebase with safety
+const app = isConfigValid ? initializeApp(firebaseConfig) : null;
+
+export const db = isConfigValid ? initializeFirestore(app, {
     localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager()
     })
-});
+}) : null;
 
-export const auth = getAuth(app);
+export const auth = isConfigValid ? getAuth(app) : { 
+  currentUser: null, 
+  onAuthStateChanged: (cb) => { 
+    console.warn("Auth not initialized due to missing config.");
+    return () => {}; 
+  } 
+};
+
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+if (isConfigValid) {
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
+}

@@ -1,7 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(API_KEY);
+
+if (!API_KEY) {
+  console.warn("⚠️ GEMINI API KEY MISSING: AI-generated content will be disabled and fallbacks will be used. Please set VITE_GEMINI_API_KEY in your environment.");
+}
+
+const genAI = new GoogleGenerativeAI(API_KEY || "dummy_key_to_prevent_initialization_error");
 const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
 
 const TIME_MAP = {
