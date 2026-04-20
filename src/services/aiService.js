@@ -9,7 +9,7 @@ if (!API_KEY) {
 }
 
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
-const model = API_KEY ? genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" }) : null;
+const model = API_KEY ? genAI.getGenerativeModel({ model: "gemini-2.5-flash" }) : null;
 
 const TIME_MAP = {
   '1 month': 30,
