@@ -98,7 +98,7 @@ export default function TaskExecutionCard({ task, isLocked, isCompleted, onToggl
                   <span className="subtopic-title">{sub.title}</span>
                 </div>
                 <div className="steps-list">
-                  {sub.steps?.map((step, stIdx) => (
+                  {Array.isArray(sub.steps) && sub.steps.map((step, stIdx) => (
                     <div key={stIdx} className={`micro-step ${step.type}`}>
                       <div className="step-icon">
                         {step.type === 'learn' && <BookOpen size={14} />}

@@ -29,7 +29,7 @@ export default function SystemDesignCard({ data, isLocked }) {
             <h4 className="mb-4 text-xl">{item.topic}</h4>
             
             <div className="workflow-container mb-6">
-              {item.flowSteps?.map((step, sIdx) => (
+              {Array.isArray(item.flowSteps) && item.flowSteps.map((step, sIdx) => (
                 <div key={sIdx} className="flow-step">
                   <div className="step-num">{sIdx + 1}</div>
                   <div className="step-text">{step}</div>

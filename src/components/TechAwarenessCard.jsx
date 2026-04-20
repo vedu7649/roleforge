@@ -31,7 +31,7 @@ export default function TechAwarenessCard({ data, isLocked }) {
             </div>
             
             <div className="trend-items">
-              {trend.items?.map((item, iIdx) => (
+              {Array.isArray(trend.items) && trend.items.map((item, iIdx) => (
                 <div key={iIdx} className="trend-item">
                   <div className="item-icon"><Box size={14} /></div>
                   <div className="item-content">

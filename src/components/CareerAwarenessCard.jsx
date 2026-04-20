@@ -33,7 +33,7 @@ export default function CareerAwarenessCard({ data, isLocked }) {
               <div className="detail-col">
                 <div className="detail-header"><Milestone size={14} /> CORE SKILLS</div>
                 <div className="skills-wrap">
-                  {advice.skills?.map((skill, sIdx) => (
+                  {Array.isArray(advice.skills) && advice.skills.map((skill, sIdx) => (
                     <span key={sIdx} className="skill-pill">{skill}</span>
                   ))}
                 </div>
@@ -42,7 +42,7 @@ export default function CareerAwarenessCard({ data, isLocked }) {
               <div className="detail-col">
                 <div className="detail-header"><Map size={14} /> TYPICAL WORKFLOW</div>
                 <ul className="workflow-list">
-                  {advice.workflow?.map((step, wIdx) => (
+                  {Array.isArray(advice.workflow) && advice.workflow.map((step, wIdx) => (
                     <li key={wIdx}>{step}</li>
                   ))}
                 </ul>
