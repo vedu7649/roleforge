@@ -70,8 +70,25 @@ export default function Grind() {
           dbService.getUserProgress(user.uid)
         ]);
 
-        if (existingPlan) setPlan(existingPlan);
-        if (existingState) setGrindState(existingState);
+        // Validate grind plan data
+        if (existingPlan && typeof existingPlan === 'object' && 
+            (existingPlan.dsa || existingPlan.project || existingPlan.revision || existingPlan.visibility)) {
+          setPlan(existingPlan);
+        } else if (existingPlan) {
+          console.warn("Grind: Invalid grind plan data, ignoring");
+        }
+
+        // Validate grind state data
+        if (existingState && typeof existingState === 'object' && 
+            typeof existingState.currentDay === 'number') {
+          setGrindState(existingState);
+        } else if (existingState) {
+          console.warn("Grind: Invalid grind state data, using defaults");
+          setGrindState({ currentDay: 0, lastCommitDate: null, streak: 0 });
+        } else {
+          setGrindState({ currentDay: 0, lastCommitDate: null, streak: 0 });
+        }
+
         if (cloudProfile) setRecoveredProfile(cloudProfile);
         if (progress) setUserProgress(progress);
       } catch (err) {

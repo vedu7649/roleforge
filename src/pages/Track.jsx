@@ -59,13 +59,20 @@ export default function Track() {
           return;
         }
 
-        // 1. Try to get existing roadmap from Firestore
-        let activeRoadmap = state?.phases ? state : null;
-
-        if (!activeRoadmap && user) {
+        // 1. Try to get existing roadmap from Firestore (don't trust location.state for roadmap data)
+        let activeRoadmap = null;
+        if (user) {
           const cloudMap = await dbService.getActiveRoadmap(user.uid);
-          if (cloudMap) {
-            activeRoadmap = cloudMap;
+          if (cloudMap && cloudMap.phases && Array.isArray(cloudMap.phases)) {
+            // Validate Firestore data
+            const isValidRoadmap = cloudMap.phases.every(phase => 
+              phase.name && Array.isArray(phase.tasks) && phase.tasks.every(task => task.id && task.title)
+            );
+            if (isValidRoadmap) {
+              activeRoadmap = cloudMap;
+            } else {
+              console.warn("Track: Invalid roadmap data in Firestore, will regenerate");
+            }
           }
         }
 
@@ -147,7 +154,24 @@ export default function Track() {
 
     initializeDashboard();
     return () => { isMounted = false; }
-  }, [state, navigate]);
+  // Clear any invalid state data to prevent cross-page contamination
+  useEffect(() => {
+    if (location.state && typeof location.state === 'object') {
+      const hasInvalidData = (
+        // If state has grind-like properties but no roadmap properties
+        (location.state.dsa || location.state.project || location.state.revision) && !location.state.phases
+      ) || (
+        // If state has phases but invalid structure
+        location.state.phases && (!Array.isArray(location.state.phases) || 
+        !location.state.phases.every(phase => phase.name && Array.isArray(phase.tasks)))
+      );
+      
+      if (hasInvalidData) {
+        console.warn("Track: Clearing invalid location.state to prevent data contamination");
+        // Note: We can't actually clear location.state, but we won't use it
+      }
+    }
+  }, [location.state]);
 
 
   // --- Logic: Behavior & Task Engine ---
