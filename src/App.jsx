@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Activity, BrainCircuit, Loader2, SunMoon, User, Zap } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { auth } from './services/firebase';
@@ -58,6 +58,7 @@ function App() {
 
   const Navbar = ({ user, theme, setTheme, profileMenuOpen, setProfileMenuOpen }) => {
     const location = useLocation();
+    const navigate = useNavigate();
     
     return (
       <nav className="navbar">

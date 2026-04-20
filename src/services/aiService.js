@@ -2,12 +2,14 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
+const AI_ENABLED = !!API_KEY;
+
 if (!API_KEY) {
   console.warn("⚠️ GEMINI API KEY MISSING: AI-generated content will be disabled and fallbacks will be used. Please set VITE_GEMINI_API_KEY in your environment.");
 }
 
-const genAI = new GoogleGenerativeAI(API_KEY || "dummy_key_to_prevent_initialization_error");
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
+const model = API_KEY ? genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" }) : null;
 
 const TIME_MAP = {
   '1 month': 30,
@@ -146,6 +148,10 @@ export const aiService = {
 
   async generateInterviewQuestion(milestone = "General Tech") {
     return await requestQueue.add(async () => {
+      if (!AI_ENABLED) {
+        console.log("📚 AI_DISABLED: Using fallback question");
+        return { question: "Explain a difficult technical challenge you solved recently.", expectedAnswer: "Clear STAR methodology explanation.", difficulty: "medium" };
+      }
       return await retryWithBackoff(async () => {
         try {
           const prompt = `You are a Senior Technical Interviewer. The user is at the '${milestone}' checkpoint.
@@ -200,6 +206,10 @@ export const aiService = {
 
   async generateDSAProblems(role = "Developer", completedTopics = [], avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
+      if (!AI_ENABLED) {
+        console.log("📚 AI_DISABLED: Using fallback DSA problems");
+        return [{ problem: "Two Sum - Find two numbers that add to target", difficulty: "Easy", concepts: ["Hash Map"] }];
+      }
       return await retryWithBackoff(async () => {
         try {
           if (!API_KEY) return this.fallbacks.dsa.slice(0, count);
@@ -216,6 +226,10 @@ export const aiService = {
 
   async generateProjectSuggestions(stack = "", completedPhases = 0, role = "Developer", avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
+      if (!AI_ENABLED) {
+        console.log("📚 AI_DISABLED: Using fallback projects");
+        return [{ title: "Build a REST API", description: "Create a backend API with authentication", complexity: "Intermediate" }];
+      }
       return await retryWithBackoff(async () => {
         try {
           if (!API_KEY) return this.fallbacks.project.slice(0, count);
@@ -232,6 +246,10 @@ export const aiService = {
 
   async generateFlashcards(completedTopics = [], role = "Developer", avoidList = [], count = 3) {
     return await requestQueue.add(async () => {
+      if (!AI_ENABLED) {
+        console.log("📚 AI_DISABLED: Using fallback flashcards");
+        return [{ front: "What is async/await?", back: "JavaScript syntax for handling asynchronous operations cleanly" }];
+      }
       return await retryWithBackoff(async () => {
         try {
           if (!API_KEY) return this.fallbacks.flashcards.slice(0, count);
@@ -332,6 +350,12 @@ export const aiService = {
 
   async generateRoadmap(role, stack, level, time) {
     return await requestQueue.add(async () => {
+      // If API disabled, skip to fallback
+      if (!AI_ENABLED) {
+        console.log("📚 AI_DISABLED: Using hardcoded fallback for", role);
+        return this._generateRoleSpecificFallback(role, stack, level, time);
+      }
+
       try {
         const prompt = `Generate a UNIQUE, highly specialized learning roadmap for a ${level} ${role} mastering the ${stack} stack over ${time}.
 
