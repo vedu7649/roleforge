@@ -56,7 +56,7 @@ function App() {
     return children;
   };
 
-  const Navbar = ({ user, theme, setTheme, profileMenuOpen, setProfileMenuOpen }) => {
+  const Navbar = ({ user, setTheme, profileMenuOpen, setProfileMenuOpen }) => {
     const location = useLocation();
     const navigate = useNavigate();
     

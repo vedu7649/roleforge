@@ -154,6 +154,8 @@ export default function Track() {
 
     initializeDashboard();
     return () => { isMounted = false; }
+  }, [state, navigate]);
+
   // Clear any invalid state data to prevent cross-page contamination
   useEffect(() => {
     if (location.state && typeof location.state === 'object') {

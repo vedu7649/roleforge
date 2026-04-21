@@ -108,8 +108,6 @@ const SCENARIOS = [
   "High-availability healthcare data pipelines"
 ];
 
-const getRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
 export const aiService = {
   fallbacks: {
     dsa: [
@@ -163,7 +161,7 @@ export const aiService = {
 
           const res = await model.generateContent(prompt);
           return parseAIResponse(res.response.text());
-        } catch (e) {
+        } catch (_e) {
           return { question: "Explain a difficult technical challenge you solved recently.", expectedAnswer: "Clear STAR methodology explanation.", difficulty: "medium" };
         }
       });
@@ -182,13 +180,13 @@ export const aiService = {
 
         const res = await model.generateContent(prompt);
         return parseAIResponse(res.response.text());
-      } catch (e) {
+      } catch (_e) {
         return { result: 'pass', score: 70, feedback: "System was unable to evaluate deeply. Manual pass granted.", weakAreas: [] };
       }
     });
   },
 
-  async generateVisibilityTasks(completedDocs = [], role = "Developer", avoidList = [], count = 4) {
+  async generateVisibilityTasks(role = "Developer", avoidList = [], count = 4) {
     return await requestQueue.add(async () => {
       return await retryWithBackoff(async () => {
         try {
@@ -199,12 +197,12 @@ export const aiService = {
           Return JSON array [{id, title, problemStatement, solution, difficulty}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.visibility.slice(0, count); }
+        } catch (_e) { return this.fallbacks.visibility.slice(0, count); }
       });
     });
   },
 
-  async generateDSAProblems(role = "Developer", completedTopics = [], avoidList = [], count = 2) {
+  async generateDSAProblems(role = "Developer", avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
       if (!AI_ENABLED) {
         console.log("📚 AI_DISABLED: Using fallback DSA problems");
@@ -219,12 +217,12 @@ export const aiService = {
           Return JSON array [{id, title, platform, difficulty, link}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.dsa.slice(0, count); }
+        } catch (_e) { return this.fallbacks.dsa.slice(0, count); }
       });
     });
   },
 
-  async generateProjectSuggestions(stack = "", completedPhases = 0, role = "Developer", avoidList = [], count = 2) {
+  async generateProjectSuggestions(stack = "", role = "Developer", avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
       if (!AI_ENABLED) {
         console.log("📚 AI_DISABLED: Using fallback projects");
@@ -239,12 +237,12 @@ export const aiService = {
           Return JSON array [{type, title, description, expectedOutcome}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.project.slice(0, count); }
+        } catch (_e) { return this.fallbacks.project.slice(0, count); }
       });
     });
   },
 
-  async generateFlashcards(completedTopics = [], role = "Developer", avoidList = [], count = 3) {
+  async generateFlashcards(role = "Developer", avoidList = [], count = 3) {
     return await requestQueue.add(async () => {
       if (!AI_ENABLED) {
         console.log("📚 AI_DISABLED: Using fallback flashcards");
@@ -259,12 +257,12 @@ export const aiService = {
           Return JSON array [{id, question, answer, importance}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.flashcards.slice(0, count); }
+        } catch (_e) { return this.fallbacks.flashcards.slice(0, count); }
       });
     });
   },
 
-  async generateSystemDesignTopics(role = "Developer", completedPhases = 0, avoidList = [], count = 2) {
+  async generateSystemDesignTopics(role = "Developer", avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
       return await retryWithBackoff(async () => {
         try {
@@ -275,7 +273,7 @@ export const aiService = {
           Return JSON array [{topic, flowSteps, explanation}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.system.slice(0, count); }
+        } catch (_e) { return this.fallbacks.system.slice(0, count); }
       });
     });
   },
@@ -291,12 +289,12 @@ export const aiService = {
           Return JSON array [{week, items:[{name, type, description}]}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.tech.slice(0, count); }
+        } catch (_e) { return this.fallbacks.tech.slice(0, count); }
       });
     });
   },
 
-  async generateCareerGuidance(role = "Developer", stack = "", completedPhases = 0, avoidList = [], count = 2) {
+  async generateCareerGuidance(role = "Developer", stack = "", avoidList = [], count = 2) {
     return await requestQueue.add(async () => {
       return await retryWithBackoff(async () => {
         try {
@@ -307,7 +305,7 @@ export const aiService = {
           Return JSON array [{role, description, skills, workflow}]. Avoid: ${avoidList.join(",")}`;
           const res = await model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }] }] });
           return parseAIResponse(res.response.text());
-        } catch (e) { return this.fallbacks.career.slice(0, count); }
+        } catch (_e) { return this.fallbacks.career.slice(0, count); }
       });
     });
   },
@@ -440,7 +438,6 @@ export const aiService = {
   _generateRoleSpecificFallback(role, stack, level, time) {
     console.log("📚 FALLBACK: Using pre-built roadmap data for", role, "- AI generation failed");
     const roleLower = role.toLowerCase();
-    const isBeginner = level.toLowerCase().includes('beginner');
 
     if (roleLower.includes('frontend') || roleLower.includes('react') || roleLower.includes('ui')) {
       const fallbackRoadmap = {
